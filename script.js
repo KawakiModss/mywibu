@@ -8,7 +8,7 @@ window.onload = function() {
 
                 // Redirect ke anime.html setelah fade out
                 setTimeout(() => {
-                    window.location.href = 'anime.html';
+                    window.location.href = 'a.html';
                 }, 500);
             }, 2000);
         };
