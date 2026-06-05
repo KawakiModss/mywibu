@@ -1,0 +1,201 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0a; color: #fff; font-family: 'Poppins', sans-serif; padding-bottom: 80px; }
+        
+        .glass { background: rgba(26, 26, 26, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(245, 158, 11, 0.3); box-shadow: 0 4px 20px rgba(245, 158, 11, 0.15); }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .input-field {
+            width: 100%;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #fff;
+            border-radius: 1rem;
+            padding: 0.85rem 1.2rem;
+            outline: none;
+        }
+        .input-field:focus { 
+            border-color: #f59e0b; 
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+        }
+        
+        .btn-primary {
+            width: 100%;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #fff;
+            border-radius: 1rem;
+            padding: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-primary:hover { opacity: 0.9; }
+        
+        .btn-google {
+            width: 100%;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 1rem;
+            padding: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            transition: background 0.2s;
+        }
+        .btn-google:hover { background: rgba(245, 158, 11, 0.1); }
+        
+        .badge-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 99px; font-size: 9px; font-weight: 700; }
+        .notification-badge { position: absolute; top: -5px; right: -8px; background: #ef4444; color: white; border-radius: 99px; font-size: 9px; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+        
+        .anime-card { transition: transform 0.3s ease; }
+        .anime-card:hover { transform: translateY(-5px); }
+        
+        .player-sheet, .profile-sheet, .settings-sheet { transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .player-sheet.open, .profile-sheet.open, .settings-sheet.open { transform: translateY(0); }
+        
+        .pagination-input { background: #1e293b; border: 1px solid rgba(245, 158, 11, 0.3); color: white; border-radius: 0.75rem; padding: 0.5rem 0.75rem; width: 70px; text-align: center; }
+        
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        
+        .verified-owner { color: #ef4444; }
+        .verified-admin { color: #f59e0b; }
+        
+        .rank-1 { background: linear-gradient(135deg,#ffd700,#f59e0b); }
+        .rank-2 { background: linear-gradient(135deg,#c0c0c0,#9ca3af); }
+        .rank-3 { background: linear-gradient(135deg,#cd7f32,#b45309); }
+        .rank-other { background: linear-gradient(135deg,#f59e0b,#d97706); }
+        
+        .swiper {
+            width: 100%;
+            height: auto;
+            border-radius: 1.5rem;
+        }
+        .swiper-slide {
+            text-align: center;
+            background: rgba(26, 26, 26, 0.6);
+            border-radius: 1.5rem;
+            padding: 1rem;
+        }
+        .swiper-pagination-bullet-active {
+            background: #f59e0b !important;
+        }
+        
+        button { cursor: pointer; }
+        
+        .media-preview {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 1rem;
+            margin-top: 0.5rem;
+        }
+        
+        .account-tab {
+            transition: all 0.2s;
+        }
+        .account-tab.active {
+            color: #f59e0b;
+            border-bottom: 2px solid #f59e0b;
+        }
+        .id-card {
+            font-family: monospace;
+            background: rgba(245, 158, 11, 0.1);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            display: inline-block;
+        }
+        .stat-number {
+            font-size: 20px;
+            font-weight: 700;
+            color: #f59e0b;
+        }
+        .stat-label {
+            font-size: 10px;
+            color: #9ca3af;
+        }
+        
+        /* FIX BUTTON CLICK - TAMBAHAN PENTING */
+        #login-page button, #login-form button, #register-form button,
+        .btn-primary, .btn-google, [onclick="doLogin()"], [onclick="doRegister()"],
+        [onclick="showLogin()"], [onclick="showRegister()"], [onclick="guestLogin()"] {
+            pointer-events: auto !important;
+            cursor: pointer !important;
+            z-index: 100000 !important;
+            position: relative;
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+        
+        #login-form, #register-form {
+            pointer-events: auto !important;
+            z-index: 100001 !important;
+        }
+        
+        #login-page {
+            pointer-events: auto !important;
+            z-index: 9999 !important;
+        }
+        
+        .community-modal {
+            pointer-events: auto !important;
+        }
+        
+        .community-modal button, .community-modal a {
+            pointer-events: auto !important;
+        }
+        
+        .overlay {
+            pointer-events: none;
+        }
+        .overlay.opacity-100, .overlay.visible {
+            pointer-events: auto;
+        }
+        
+        .faq-item {
+            transition: all 0.2s;
+        }
+        .faq-question {
+            cursor: pointer;
+        }
+        .faq-answer {
+            display: none;
+        }
+        .faq-answer.open {
+            display: block;
+        }
+        
+        .episode-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .episode-btn {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .episode-btn:hover {
+            background: #f59e0b;
+            color: #000;
+        }
+        
+        /* MODAL STYLE */
+        .community-modal {
+            z-index: 20000;
+        }
+        .modal-content {
+            animation: modalFadeIn 0.3s ease-out;
+        }
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
