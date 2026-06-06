@@ -219,6 +219,189 @@ function uploadAnimeWithEpisodes() {
 function getUserKeys(email) { var users = getUsers(); return (users[email] && users[email].keys !== undefined) ? users[email].keys : 0; }
 function setUserKeys(email, keys) { var users = getUsers(); if(users[email]) { users[email].keys = keys; saveUsers(users); if(getCurrentUser() && getCurrentUser().email === email) { var cu = getCurrentUser(); cu.keys = keys; setCurrentUser(cu); } } }
 
+// ========== AUTO SYNC USER STATS KE API ==========
+async function syncUserStatsToAPI() {
+    let cu = getCurrentUser();
+    if (cu?.email) {
+        await apiCall('updateUserStats', {
+            email: cu.email,
+            stats: {
+                level: cu.level,
+                xp: cu.xp,
+                keys: cu.keys,
+                wibuGem: cu.wibuGem
+            }
+        });
+        console.log('✅ User stats synced to server');
+    }
+}
+
+// ========== SHOW IKLAN ==========
+function showIklan(callback) { 
+    var cu = getCurrentUser(); 
+    if(!cu) { showToast('Login dulu untuk nonton iklan!', 'warning'); return false; } 
+    var plan = getCurrentPlan(); 
+    if(plan === 'premium' || plan === 'owner') { showToast('Premium user tidak perlu nonton iklan!', 'info'); return false; } 
+    if(!checkAndResetIklanLimit()) { showToast('Sudah mencapai limit iklan hari ini (' + MAX_IKLAN_PER_HARI + ' iklan)!', 'warning'); return false; } 
+    
+    pendingEpisodeCallback = callback; 
+    var randomIklan = IKLAN_ARRAY[Math.floor(Math.random() * IKLAN_ARRAY.length)]; 
+    var modal = document.getElementById('iklan-modal'); 
+    var video = document.getElementById('iklan-video'); 
+    var countdownEl = document.getElementById('iklan-countdown'); 
+    var skipBtn = document.getElementById('skip-iklan-btn'); 
+    
+    modal.classList.remove('hidden'); 
+    video.src = randomIklan; 
+    video.load(); 
+    video.play(); 
+    
+    var secondsLeft = 5; 
+    countdownEl.innerText = 'Iklan selesai dalam ' + secondsLeft + ' detik...'; 
+    skipBtn.disabled = true; 
+    skipBtn.style.pointerEvents = 'none'; 
+    skipBtn.classList.add('opacity-50'); 
+    
+    var interval = setInterval(function() { 
+        secondsLeft--; 
+        if(secondsLeft <= 0) { 
+            clearInterval(interval); 
+            countdownEl.innerText = 'Klik tombol untuk lanjut'; 
+            skipBtn.disabled = false; 
+            skipBtn.style.pointerEvents = 'auto'; 
+            skipBtn.classList.remove('opacity-50'); 
+            skipBtn.innerText = 'Lanjutkan →'; 
+        } else { 
+            countdownEl.innerText = 'Iklan selesai dalam ' + secondsLeft + ' detik...'; 
+        } 
+    }, 1000); 
+    window.currentIklanInterval = interval; 
+    return true; 
+}
+
+function skipIklan() { 
+    var video = document.getElementById('iklan-video'); 
+    video.pause(); 
+    var modal = document.getElementById('iklan-modal'); 
+    modal.classList.add('hidden'); 
+    if(window.currentIklanInterval) clearInterval(window.currentIklanInterval); 
+    
+    incrementIklanCount(); 
+    var cu = getCurrentUser(); 
+    if(cu) { 
+        var currentKeys = getUserKeys(cu.email); 
+        setUserKeys(cu.email, currentKeys + 1); 
+        showToast('+1 Key! Sekarang kamu punya ' + (currentKeys + 1) + ' key', 'info'); 
+        updateUserUI(); 
+        syncUserStatsToAPI();
+    } 
+    if(pendingEpisodeCallback) { 
+        pendingEpisodeCallback(true); 
+        pendingEpisodeCallback = null; 
+    } 
+}
+
+function checkAndResetIklanLimit() { 
+    var today = new Date().toDateString(); 
+    var saved = DB.get('iklan_data'); 
+    if(!saved || saved.date !== today) { 
+        DB.set('iklan_data', { date: today, count: 0 }); 
+        todayIklanCount = 0; 
+        return true; 
+    } 
+    todayIklanCount = saved.count; 
+    return todayIklanCount < MAX_IKLAN_PER_HARI; 
+}
+
+function incrementIklanCount() { 
+    var today = new Date().toDateString(); 
+    var saved = DB.get('iklan_data') || { date: today, count: 0 }; 
+    saved.count = (saved.count || 0) + 1; 
+    DB.set('iklan_data', saved); 
+    todayIklanCount = saved.count; 
+}
+
+function canWatchEpisode(animeUrl) { 
+    var plan = getCurrentPlan(); 
+    var cu = getCurrentUser(); 
+    if(plan === 'owner') return true; 
+    if(plan === 'premium') return true; 
+    if(!cu) { 
+        var gw = DB.get('guest_watch') || {}; 
+        if(gw[animeUrl] >= 2) { 
+            showToast('Mode Tamu: maks 2 episode/anime! Daftar untuk unlimited.', 'warning'); 
+            return false; 
+        } 
+        return true; 
+    } 
+    var keys = getUserKeys(cu.email); 
+    if(keys >= EPISODE_KEY_COST) return true; 
+    else { 
+        showToast('Key tidak cukup! Nonton iklan untuk dapat key gratis.', 'warning'); 
+        return false; 
+    } 
+}
+
+function useKey(animeUrl, animeTitle, animeCover) { 
+    var plan = getCurrentPlan(); 
+    var cu = getCurrentUser(); 
+    if(plan === 'owner') return true; 
+    if(plan === 'premium') return true; 
+    if(!cu) return true; 
+    
+    var keys = getUserKeys(cu.email); 
+    if(keys >= EPISODE_KEY_COST) { 
+        setUserKeys(cu.email, keys - EPISODE_KEY_COST); 
+        updateUserUI(); 
+        
+        var wd = getWatchData(); 
+        if(!wd[animeUrl]) wd[animeUrl] = { title: animeTitle, cover: animeCover, count: 0 }; 
+        wd[animeUrl].count++; 
+        setWatchData(wd); 
+        addToHistory({ url: animeUrl, title: animeTitle, cover: animeCover }); 
+        
+        var users = getUsers(); 
+        if(users[cu.email]) { 
+            var episodeCount = (users[cu.email].episodeCount || 0) + 1; 
+            users[cu.email].episodeCount = episodeCount; 
+            if(episodeCount >= EPISODE_PER_LEVEL_UP) { 
+                users[cu.email].episodeCount = episodeCount - EPISODE_PER_LEVEL_UP; 
+                var currentLevel = users[cu.email].level || 1; 
+                var newLevel = currentLevel + LEVEL_GAIN_PER_EPISODE; 
+                users[cu.email].level = newLevel; 
+                users[cu.email].xp = newLevel * 100; 
+                showToast('🎉 Selamat! Kamu naik ' + LEVEL_GAIN_PER_EPISODE + ' level! Level sekarang ' + newLevel, 'info'); 
+            } 
+            saveUsers(users); 
+            setCurrentUser({ ...cu, ...users[cu.email] }); 
+            updateUserUI(); 
+            syncUserStatsToAPI();
+        } 
+        return true; 
+    } 
+    return false; 
+}
+
+// ========== OVERRIDE FUNGSI STORAGE KE API ==========
+const originalSetWatchData = setWatchData;
+window.setWatchData = function(w) {
+    originalSetWatchData(w);
+    let cu = getCurrentUser();
+    if (cu?.email) {
+        apiCall('updateWatchData', { email: cu.email, watchData: w });
+    }
+};
+
+const originalSaveWatchHistory = saveWatchHistory;
+window.saveWatchHistory = function(h) {
+    originalSaveWatchHistory(h);
+    let cu = getCurrentUser();
+    if (cu?.email) {
+        apiCall('syncHistory', { email: cu.email, history: h });
+    }
+};
+
+// ========== OWNER FUNCTIONS ==========
 async function addUserKey() { 
     if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
     var email = document.getElementById('key-user-email').value.trim(); 
@@ -341,18 +524,6 @@ async function assignRoleWithExpired() {
     document.getElementById('custom-expired-container').classList.add('hidden'); 
 }
 
-function checkAndResetIklanLimit() { var today = new Date().toDateString(); var saved = DB.get('iklan_data'); if(!saved || saved.date !== today) { DB.set('iklan_data', { date: today, count: 0 }); todayIklanCount = 0; return true; } todayIklanCount = saved.count; return todayIklanCount < MAX_IKLAN_PER_HARI; }
-function incrementIklanCount() { var today = new Date().toDateString(); var saved = DB.get('iklan_data') || { date: today, count: 0 }; saved.count = (saved.count || 0) + 1; DB.set('iklan_data', saved); todayIklanCount = saved.count; }
-
-function showIklan(callback) { var cu = getCurrentUser(); if(!cu) { showToast('Login dulu untuk nonton iklan!', 'warning'); return false; } var plan = getCurrentPlan(); if(plan === 'premium' || plan === 'owner') { showToast('Premium user tidak perlu nonton iklan!', 'info'); return false; } if(!checkAndResetIklanLimit()) { showToast('Sudah mencapai limit iklan hari ini (' + MAX_IKLAN_PER_HARI + ' iklan)!', 'warning'); return false; } pendingEpisodeCallback = callback; var randomIklan = IKLAN_ARRAY[Math.floor(Math.random() * IKLAN_ARRAY.length)]; var modal = document.getElementById('iklan-modal'); var video = document.getElementById('iklan-video'); var countdownEl = document.getElementById('iklan-countdown'); var skipBtn = document.getElementById('skip-iklan-btn'); modal.classList.remove('hidden'); video.src = randomIklan; video.load(); video.play(); var secondsLeft = 5; countdownEl.innerText = 'Iklan selesai dalam ' + secondsLeft + ' detik...'; skipBtn.disabled = true; skipBtn.style.pointerEvents = 'none'; skipBtn.classList.add('opacity-50'); var interval = setInterval(function() { secondsLeft--; if(secondsLeft <= 0) { clearInterval(interval); countdownEl.innerText = 'Klik tombol untuk lanjut'; skipBtn.disabled = false; skipBtn.style.pointerEvents = 'auto'; skipBtn.classList.remove('opacity-50'); skipBtn.innerText = 'Lanjutkan →'; } else { countdownEl.innerText = 'Iklan selesai dalam ' + secondsLeft + ' detik...'; } }, 1000); window.currentIklanInterval = interval; return true; }
-
-function skipIklan() { var video = document.getElementById('iklan-video'); video.pause(); var modal = document.getElementById('iklan-modal'); modal.classList.add('hidden'); if(window.currentIklanInterval) clearInterval(window.currentIklanInterval); incrementIklanCount(); var cu = getCurrentUser(); if(cu) { var currentKeys = getUserKeys(cu.email); setUserKeys(cu.email, currentKeys + 1); showToast('+1 Key! Sekarang kamu punya ' + (currentKeys + 1) + ' key', 'info'); updateUserUI(); } if(pendingEpisodeCallback) { pendingEpisodeCallback(true); pendingEpisodeCallback = null; } }
-
-function canWatchEpisode(animeUrl) { var plan = getCurrentPlan(); var cu = getCurrentUser(); if(plan === 'owner') return true; if(plan === 'premium') return true; if(!cu) { var gw = DB.get('guest_watch') || {}; if(gw[animeUrl] >= 2) { showToast('Mode Tamu: maks 2 episode/anime! Daftar untuk unlimited.', 'warning'); return false; } return true; } var keys = getUserKeys(cu.email); if(keys >= EPISODE_KEY_COST) return true; else { showToast('Key tidak cukup! Nonton iklan untuk dapat key gratis.', 'warning'); return false; } }
-
-function useKey(animeUrl, animeTitle, animeCover) { var plan = getCurrentPlan(); var cu = getCurrentUser(); if(plan === 'owner') return true; if(plan === 'premium') return true; if(!cu) return true; var keys = getUserKeys(cu.email); if(keys >= EPISODE_KEY_COST) { setUserKeys(cu.email, keys - EPISODE_KEY_COST); updateUserUI(); var wd = getWatchData(); if(!wd[animeUrl]) wd[animeUrl] = { title: animeTitle, cover: animeCover, count: 0 }; wd[animeUrl].count++; setWatchData(wd); addToHistory({ url: animeUrl, title: animeTitle, cover: animeCover }); var users = getUsers(); if(users[cu.email]) { var episodeCount = (users[cu.email].episodeCount || 0) + 1; users[cu.email].episodeCount = episodeCount; if(episodeCount >= EPISODE_PER_LEVEL_UP) { users[cu.email].episodeCount = episodeCount - EPISODE_PER_LEVEL_UP; var currentLevel = users[cu.email].level || 1; var newLevel = currentLevel + LEVEL_GAIN_PER_EPISODE; users[cu.email].level = newLevel; users[cu.email].xp = newLevel * 100; showToast('🎉 Selamat! Kamu naik ' + LEVEL_GAIN_PER_EPISODE + ' level! Level sekarang ' + newLevel, 'info'); } saveUsers(users); setCurrentUser({ ...cu, ...users[cu.email] }); updateUserUI(); } return true; } return false; }
-
-// ========== NOTIF & BROADCAST ==========
 function addNotification(notif) { let n = getNotifications(); n.unshift({ ...notif, id: Date.now(), read: false, timestamp: Date.now() }); saveNotifications(n); updateNotificationBadge(); }
 function sendBroadcastWithMedia() { var title = document.getElementById('broadcast-title').value.trim(); var msg = document.getElementById('broadcast-message').value.trim(); var mediaFile = document.getElementById('broadcast-media').files[0]; if(!title || !msg) { showToast('Judul dan pesan wajib!','warning'); return; } if(mediaFile) { var reader = new FileReader(); reader.onload = function(e) { var mediaUrl = e.target.result; var isVideo = mediaFile.type.startsWith('video/'); addNotification({ type:'broadcast', title:title, message:msg, media:mediaUrl, isVideo:isVideo, sender: getCurrentUser()?.username || 'Owner' }); showToast('Broadcast dengan media terkirim!','info'); }; reader.readAsDataURL(mediaFile); } else { addNotification({ type:'broadcast', title:title, message:msg, sender: getCurrentUser()?.username || 'Owner' }); showToast('Broadcast terkirim!','info'); } document.getElementById('broadcast-title').value = ''; document.getElementById('broadcast-message').value = ''; document.getElementById('broadcast-media').value = ''; document.getElementById('media-preview').innerHTML = ''; }
 function previewBroadcastMedia() { var file = document.getElementById('broadcast-media').files[0]; var preview = document.getElementById('media-preview'); if(!file) { preview.innerHTML = ''; return; } var reader = new FileReader(); reader.onload = function(e) { if(file.type.startsWith('image/')) preview.innerHTML = '<img src="'+e.target.result+'" class="media-preview">'; else if(file.type.startsWith('video/')) preview.innerHTML = '<video src="'+e.target.result+'" class="media-preview" controls></video>'; }; reader.readAsDataURL(file); }
@@ -364,13 +535,11 @@ function markNotificationRead(id) { let n = getNotifications(); let idx = n.find
 function markAllNotificationsRead() { let n = getNotifications(); for(var i=0;i<n.length;i++) n[i].read=true; saveNotifications(n); updateNotificationBadge(); renderNotificationPanel(); }
 var notifPanelOpen=false; function toggleNotificationPanel() { var p=document.getElementById('notification-panel'); if(notifPanelOpen) { p.classList.add('hidden'); notifPanelOpen=false; } else { renderNotificationPanel(); p.classList.remove('hidden'); notifPanelOpen=true; } }
 
-// ========== REPORT ==========
 function submitReportWithImage() { var isGuest = DB.get('guest_mode') === true; if(isGuest) { showToast('Guest tidak bisa mengirim laporan! Login atau daftar dulu.', 'warning'); return; } var type = document.getElementById('report-type').value; var title = document.getElementById('report-title').value.trim(); var desc = document.getElementById('report-desc').value.trim(); var screenshotFile = document.getElementById('report-screenshot').files[0]; if(!title || !desc) { showToast('Lengkapi semua!', 'warning'); return; } var cu = getCurrentUser(); var reporter = cu ? (cu.username || cu.email) : 'Unknown'; var reports = getReports(); var newReport = { id: Date.now(), type:type, title:title, desc:desc, reporter:reporter, date: new Date().toISOString(), status: 'pending' }; if(screenshotFile) { var reader = new FileReader(); reader.onload = function(e) { newReport.screenshot = e.target.result; reports.unshift(newReport); saveReports(reports); showToast('Laporan dengan screenshot terkirim!', 'info'); }; reader.readAsDataURL(screenshotFile); } else { reports.unshift(newReport); saveReports(reports); showToast('Laporan terkirim!', 'info'); } document.getElementById('report-title').value = ''; document.getElementById('report-desc').value = ''; document.getElementById('report-screenshot').value = ''; document.getElementById('screenshot-preview').innerHTML = ''; renderUserReports(); if(currentUserIsOwner()) renderAllReports(); }
 function renderUserReports() { var cu = getCurrentUser(); var container = document.getElementById('user-reports-list'); if(!container) return; if(!cu) { container.innerHTML = '<div class="text-center text-gray-500 text-sm">Login untuk melacak laporan</div>'; return; } var reports = getReports().filter(function(r){ return r.reporter === (cu.username || cu.email); }); if(reports.length === 0) { container.innerHTML = '<div class="text-center text-gray-500 text-sm">Belum ada laporan</div>'; return; } var html = ''; for(var i=0;i<Math.min(10,reports.length);i++) { var r = reports[i]; var screenshotHtml = r.screenshot ? '<img src="'+r.screenshot+'" class="media-preview mt-2" style="max-height:100px">' : ''; html += '<div class="glass rounded-xl p-3"><div class="flex justify-between"><span class="text-[10px] text-amber-400">'+r.type+'</span><span class="text-[9px] '+(r.status==='pending'?'text-yellow-400':'text-green-400')+'">'+(r.status==='pending'?'Menunggu':'Selesai')+'</span></div><p class="text-xs font-semibold mt-1">'+r.title+'</p><p class="text-[10px] text-gray-500 mt-1">'+(r.desc||'').substring(0,100)+((r.desc||'').length>100?'...':'')+'</p>'+screenshotHtml+'<p class="text-[9px] text-gray-600 mt-2">'+new Date(r.date).toLocaleString()+'</p></div>'; } container.innerHTML = html; }
 function renderAllReports() { var reports = getReports(); var container = document.getElementById('all-reports-list'); if(!container) return; if(reports.length===0) { container.innerHTML='<div class="text-center text-gray-500">Belum ada laporan</div>'; return; } var html = ''; for(var i=0;i<reports.length;i++) { var r = reports[i]; var screenshotHtml = r.screenshot ? '<img src="'+r.screenshot+'" class="media-preview mt-2" style="max-height:100px">' : ''; html += '<div class="glass rounded-xl p-3"><div class="flex justify-between"><span class="text-[10px] text-amber-400">'+r.type+'</span><span class="text-[9px] '+(r.status==='pending'?'text-yellow-400':'text-green-400')+'">'+r.status+'</span></div><p class="text-xs font-semibold">'+r.title+'</p><p class="text-[10px] text-gray-500">'+r.reporter+' - '+new Date(r.date).toLocaleString()+'</p>'+screenshotHtml+'<div class="flex gap-2 mt-2"><button onclick="updateReportStatus('+r.id+',\'resolved\')" class="text-[10px] bg-green-500/20 px-2 py-1 rounded">Selesai</button><button onclick="updateReportStatus('+r.id+',\'pending\')" class="text-[10px] bg-yellow-500/20 px-2 py-1 rounded">Pending</button></div></div>'; } container.innerHTML = html; }
 function updateReportStatus(id, status) { let reports = getReports(); let idx = reports.findIndex(function(r){ return r.id===id; }); if(idx!==-1) { reports[idx].status=status; saveReports(reports); renderAllReports(); showToast('Status diupdate','info'); } }
 
-// ========== OWNER & ADMIN ==========
 function isOwner(email) { return email === 'admin@mywibu.app'; }
 function currentUserIsOwner() { var cu = getCurrentUser(); return cu && cu.email === 'admin@mywibu.app'; }
 function currentUserIsAdmin() { var cu = getCurrentUser(); if(!cu) return false; return getUserRole(cu.email) === 'admin' || cu.email === 'admin@mywibu.app'; }
@@ -651,9 +820,6 @@ function saveChatMessages() {
     localStorage.setItem('ak_global_chat', JSON.stringify(chatMessages));
     updateChatBadge();
     renderChatPreview();
-    if (window.chatChannel) {
-        window.chatChannel.postMessage({ type: 'CHAT_UPDATED', messages: chatMessages });
-    }
 }
 
 function updateChatBadge() {
@@ -690,11 +856,11 @@ function renderChatPreview() {
             <div class="glass rounded-xl p-3 cursor-pointer hover:bg-amber-500/10 transition" onclick="openGlobalChat()">
                 <div class="flex items-center gap-2 mb-1 flex-wrap">
                     <div class="w-6 h-6 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden text-[10px] font-bold text-white">
-                        ${msg.senderName ? msg.senderName.charAt(0).toUpperCase() : '?'}
+                        ${escapeHtml(msg.senderName ? msg.senderName.charAt(0).toUpperCase() : '?')}
                     </div>
                     <span class="text-xs font-semibold">${escapeHtml(msg.senderName || 'Anonymous')}</span>
                     ${isOwner || isAdmin ? '<i data-lucide="badge-check" class="w-3 h-3 text-amber-400"></i>' : ''}
-                    <span class="text-[8px] text-gray-500 font-mono">${msg.senderUserId || '#XXXXXX'}</span>
+                    <span class="text-[8px] text-gray-500 font-mono">${escapeHtml(msg.senderUserId || '#XXXXXX')}</span>
                     <span class="badge-pill bg-amber-500/20 text-amber-400 text-[8px]">${badge.label}</span>
                     <div class="text-[9px] text-gray-500 ml-auto">${new Date(msg.timestamp).toLocaleTimeString()}</div>
                 </div>
@@ -768,11 +934,11 @@ function renderChatMessagesFull() {
             <div class="glass rounded-xl p-3">
                 <div class="flex items-center gap-2 mb-2 flex-wrap">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden text-xs font-bold text-white">
-                        ${msg.senderName ? msg.senderName.charAt(0).toUpperCase() : '?'}
+                        ${escapeHtml(msg.senderName ? msg.senderName.charAt(0).toUpperCase() : '?')}
                     </div>
                     <span class="text-sm font-semibold">${escapeHtml(msg.senderName || 'Anonymous')}</span>
                     ${isOwner || isAdmin ? '<i data-lucide="badge-check" class="w-4 h-4 text-amber-400"></i>' : ''}
-                    <span class="text-[9px] text-gray-500 font-mono">${msg.senderUserId || '#XXXXXX'}</span>
+                    <span class="text-[9px] text-gray-500 font-mono">${escapeHtml(msg.senderUserId || '#XXXXXX')}</span>
                     <span class="badge-pill bg-amber-500/20 text-amber-400 text-[9px]">${badge.label}</span>
                     <div class="text-[9px] text-gray-500 ml-auto">${new Date(msg.timestamp).toLocaleString()}</div>
                 </div>
@@ -832,10 +998,17 @@ function sendChatMessage() {
     
     input.value = '';
     renderChatMessagesFull();
+    renderChatPreview();
+    updateChatBadge();
     
-    if (window.chatChannel) {
-        window.chatChannel.postMessage({ type: 'NEW_CHAT', message: newMsg });
-    }
+    // SYNC KE SERVER
+    syncChatToServer(newMsg);
+    
+    showToast('Pesan terkirim!', 'info');
+}
+
+async function syncChatToServer(msg) {
+    await apiCall('sendChat', { message: msg });
 }
 
 function escapeHtml(str) {
@@ -847,25 +1020,6 @@ function escapeHtml(str) {
         return m;
     });
 }
-
-window.chatChannel = new BroadcastChannel('animekyu_global_chat');
-window.chatChannel.onmessage = function(e) {
-    if (e.data.type === 'NEW_CHAT') {
-        chatMessages.push(e.data.message);
-        saveChatMessages();
-        if (document.getElementById('globalChatModal')) {
-            renderChatMessagesFull();
-        }
-    }
-    if (e.data.type === 'CHAT_UPDATED') {
-        chatMessages = e.data.messages;
-        renderChatPreview();
-        updateChatBadge();
-        if (document.getElementById('globalChatModal')) {
-            renderChatMessagesFull();
-        }
-    }
-};
 
 // Global window functions
 window.switchPage=switchPage; window.loadDetail=loadDetail; window.playEpisode=playEpisode; window.closePlayer=closePlayer; window.closeProfile=closeProfile; window.openProfile=openProfile; window.toggleSidebar=toggleSidebar; window.selectDay=selectDay; window.selectBrowseKey=selectBrowseKey; window.changeBrowsePage=changeBrowsePage; window.changeMoviesPage=changeMoviesPage; window.filterByGenre=filterByGenre; window.scrollToTop=scrollToTop; window.openSettings=openSettings; window.closeSettings=closeSettings; window.doLogout=doLogout; window.guestLogin=guestLogin; window.guestLogout=guestLogout; window.googleLogin=googleLogin; window.doLogin=doLogin; window.doRegister=doRegister; window.showLogin=showLogin; window.showRegister=showRegister; window.upgradeToPremium=upgradeToPremium; window.submitReportWithImage=submitReportWithImage; window.sendBroadcastWithMedia=sendBroadcastWithMedia; window.assignRoleWithExpired=assignRoleWithExpired; window.updateReportStatus=updateReportStatus; window.toggleNotificationPanel=toggleNotificationPanel; window.markNotificationRead=markNotificationRead; window.markAllNotificationsRead=markAllNotificationsRead; window.triggerAvatarUpload=triggerAvatarUpload; window.handleAvatarChange=handleAvatarChange; window.saveSettings=saveSettings; window.toggleCustomExpired=toggleCustomExpired; window.switchAccountTab=switchAccountTab; window.skipIklan=skipIklan; window.addUserKey=addUserKey; window.addUserLevel=addUserLevel; window.addUserGem=addUserGem; window.toggleFaq=toggleFaq; window.uploadAnimeWithEpisodes=uploadAnimeWithEpisodes;
@@ -884,7 +1038,7 @@ if(cu || isGuest) {
 
 document.getElementById('closeModalBtn')?.addEventListener('click', closeCommunityModal);
 
-// ========== FORCE FIX TOMBOL LOGIN - PASTI BISA DI KLIK ==========
+// ========== FORCE FIX TOMBOL LOGIN ==========
 (function forceFixLoginButtons() {
     setTimeout(function() {
         var loginPage = document.getElementById('login-page');
@@ -915,7 +1069,7 @@ document.getElementById('closeModalBtn')?.addEventListener('click', closeCommuni
         if (loginForm) loginForm.style.pointerEvents = 'auto';
         if (registerForm) registerForm.style.pointerEvents = 'auto';
         
-        console.log('🔧 FORCE FIX TOMBOL AKTIF - ' + semuaTombol.length + ' tombol sudah siap');
+        console.log('🔧 TOMBOL LOGIN/DAFTAR SUDAH BISA DI KLIK - ' + semuaTombol.length + ' tombol siap');
     }, 100);
 })();
 
@@ -1004,7 +1158,7 @@ window.renderTopAnimeList = async function() {
     let container = document.getElementById('top-global-list');
     if(!container) return;
     if(!top.length){
-        container.innerHTML = '<div class="text-center text-gray-500">Belum ada data</div>';
+        container.innerHTML = '<div class="text-center text-gray-500">Belum ada data tontonan</div>';
         return;
     }
     let html = '';
@@ -1070,7 +1224,7 @@ window.renderTopUsersList = async function() {
     if(window.lucide) lucide.createIcons();
 };
 
-// CHAT REALTIME
+// CHAT REALTIME - SYNC KE SERVER
 window.loadChatMessages = async function() {
     let res = await apiCall('getChat');
     if(res?.messages){
@@ -1082,72 +1236,7 @@ window.loadChatMessages = async function() {
     }
 };
 
-window.sendChatMessageToServer = async function(message) {
-    let cu = getCurrentUser();
-    let isGuest = localStorage.getItem('guest_mode') === 'true';
-    let newMsg = {
-        id: Date.now(),
-        senderEmail: cu?.email || 'guest_' + Date.now(),
-        senderName: cu?.username || (isGuest ? 'Guest Mode' : 'Anonymous'),
-        senderLevel: cu?.level || 1,
-        senderUserId: cu?.userId || '#GUEST',
-        message: message,
-        timestamp: Date.now(),
-        read: false
-    };
-    await apiCall('sendChat', { message: newMsg });
-    await loadChatMessages();
-};
-
-const originalSendChat = window.sendChatMessage;
-window.sendChatMessage = async function() {
-    let input = document.getElementById('chatInput');
-    let msg = input?.value.trim();
-    if(msg){
-        await window.sendChatMessageToServer(msg);
-        if(input) input.value = '';
-    } else if(originalSendChat){
-        originalSendChat();
-    }
-};
-
-// SYNC USER STATS KE API
-async function syncUserStatsToAPI() {
-    let cu = getCurrentUser();
-    if(cu?.email){
-        await apiCall('updateUserStats', {
-            email: cu.email,
-            stats: {
-                level: cu.level,
-                xp: cu.xp,
-                keys: cu.keys,
-                wibuGem: cu.wibuGem
-            }
-        });
-    }
-}
-
-// OVERRIDE useKey supaya sync ke API
-const originalUseKey = useKey;
-window.useKey = function(animeUrl, animeTitle, animeCover) {
-    let result = originalUseKey(animeUrl, animeTitle, animeCover);
-    if(result){
-        setTimeout(() => { syncUserStatsToAPI(); }, 500);
-    }
-    return result;
-};
-
-// OVERRIDE setUserKeys supaya sync ke API
-const originalSetUserKeys = setUserKeys;
-window.setUserKeys = function(email, keys) {
-    originalSetUserKeys(email, keys);
-    let cu = getCurrentUser();
-    if(cu?.email === email){
-        syncUserStatsToAPI();
-    }
-};
-
-// POLLING REALTIME - PASTI UPDATE DATA DARI SERVER
+// POLLING REALTIME
 setInterval(async () => {
     if(window.currentPage === 'home' || window.currentPage === 'top'){
         await window.renderTopGlobalUsersCarousel();
@@ -1155,7 +1244,7 @@ setInterval(async () => {
         await window.renderTopAnimeList();
     }
     await window.loadChatMessages();
-}, 3000);
+}, 5000);
 
 setTimeout(() => { window.loadChatMessages(); }, 1000);
-console.log('🔥 REALTIME ACTIVE - CHAT BISA, TOP GLOBAL BISA, OWNER PANEL BISA');
+console.log('🔥 REALTIME ACTIVE - SEMUA FITUR JALAN');
