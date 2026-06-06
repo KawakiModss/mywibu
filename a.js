@@ -14,6 +14,25 @@ tailwind.config = {
     }
 };
 
+// ========== REALTIME API (TARUH PALING ATAS AGAR BISA DIPAKAI SEMUA FUNGSI) ==========
+const API_URL = window.location.origin + '/api.php';
+
+async function apiCall(action, body = null, query = '') {
+    let url = `${API_URL}?action=${action}`;
+    if (query) url += '&' + query;
+    try {
+        let res = await fetch(url, {
+            method: body ? 'POST' : 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : null
+        });
+        return await res.json();
+    } catch(e) { 
+        console.error('API Error:', e); 
+        return null; 
+    }
+}
+
 // ========== MODAL COMMUNITY ==========
 function showCommunityModal() {
     var modal = document.getElementById('communityModal');
@@ -131,9 +150,28 @@ function showRegister() {
     if(registerForm) registerForm.style.display = 'flex';
 }
 
-function doLogin() { 
+async function doLogin() { 
     var email = document.getElementById('login-email').value.trim(); 
     var pass = document.getElementById('login-password').value; 
+    
+    // Coba login via API dulu
+    let result = await apiCall('login', { email: email, password: pass });
+    
+    if(result && result.status === 'ok'){
+        // Update users lokal
+        let users = getUsers();
+        users[email] = result.user;
+        saveUsers(users);
+        setCurrentUser({ email: email, ...result.user });
+        DB.del('guest_mode');
+        document.getElementById('login-page').style.display = 'none';
+        updateUserUI();
+        initApp();
+        showToast('Login berhasil!', 'info');
+        return;
+    }
+    
+    // Fallback ke local storage
     var users = getUsers(); 
     if(!users[email]) { alert('Email tidak terdaftar'); return; } 
     if(users[email].password !== pass) { alert('Password salah'); return; } 
@@ -144,12 +182,28 @@ function doLogin() {
     initApp(); 
 }
 
-function doRegister() { 
+async function doRegister() { 
     var user = document.getElementById('reg-username').value.trim(); 
     var email = document.getElementById('reg-email').value.trim(); 
     var pass = document.getElementById('reg-password').value; 
     if(!user || !email || !pass) { alert('Lengkapi semua'); return; } 
     if(pass.length<6) { alert('Password min 6 karakter'); return; } 
+    
+    let result = await apiCall('register', { email: email, username: user, password: pass });
+    
+    if(result && result.status === 'ok'){
+        let users = getUsers();
+        users[email] = result.user;
+        saveUsers(users);
+        setCurrentUser({ email: email, ...result.user });
+        document.getElementById('login-page').style.display = 'none';
+        updateUserUI();
+        initApp();
+        showToast('Registrasi berhasil!', 'info');
+        return;
+    }
+    
+    // Fallback ke local storage
     var users = getUsers(); 
     if(users[email]) { alert('Email sudah terdaftar'); return; } 
     var randomId = generateRandomId();
@@ -232,7 +286,6 @@ async function syncUserStatsToAPI() {
                 wibuGem: cu.wibuGem
             }
         });
-        console.log('✅ User stats synced to server');
     }
 }
 
@@ -401,86 +454,125 @@ window.saveWatchHistory = function(h) {
     }
 };
 
-// ========== OWNER FUNCTIONS ==========
+// ========== OWNER FUNCTIONS - FIX ==========
 async function addUserKey() { 
-    if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
+    if(!currentUserIsOwner()) { 
+        showToast('Hanya owner!', 'warning'); 
+        return; 
+    } 
     var email = document.getElementById('key-user-email').value.trim(); 
     var amount = parseInt(document.getElementById('key-add-amount').value) || 0; 
-    if(!email) { showToast('Masukkan email!', 'warning'); return; } 
-    if(amount <= 0) { showToast('Jumlah key harus lebih dari 0!', 'warning'); return; }
+    if(!email) { 
+        showToast('Masukkan email!', 'warning'); 
+        return; 
+    } 
+    if(amount <= 0) { 
+        showToast('Jumlah key harus lebih dari 0!', 'warning'); 
+        return; 
+    }
     
-    let result = await apiCall('addUserKey', { email: email, amount: amount });
-    if(result && result.status === 'ok'){
-        let users = getUsers();
-        if(users[email]) {
-            users[email].keys = (users[email].keys || 0) + amount;
-            saveUsers(users);
-            if(getCurrentUser()?.email === email){
-                let cu = getCurrentUser();
-                cu.keys = users[email].keys;
-                setCurrentUser(cu);
+    try {
+        let result = await apiCall('addUserKey', { email: email, amount: amount });
+        if(result && result.status === 'ok'){
+            let users = getUsers();
+            if(users[email]) {
+                users[email].keys = (users[email].keys || 0) + amount;
+                saveUsers(users);
+                if(getCurrentUser()?.email === email){
+                    let cu = getCurrentUser();
+                    cu.keys = users[email].keys;
+                    setCurrentUser(cu);
+                }
             }
+            showToast('Berhasil tambah ' + amount + ' key untuk ' + email, 'info'); 
+            updateUserUI();
+        } else {
+            showToast('Gagal tambah key! ' + (result?.message || ''), 'error');
         }
-        showToast('Berhasil tambah ' + amount + ' key untuk ' + email, 'info'); 
-        updateUserUI();
-    } else {
-        showToast('Gagal tambah key!', 'error');
+    } catch(e) {
+        showToast('Error: ' + e.message, 'error');
     }
     document.getElementById('key-user-email').value = ''; 
 }
 
 async function addUserLevel() { 
-    if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
+    if(!currentUserIsOwner()) { 
+        showToast('Hanya owner!', 'warning'); 
+        return; 
+    } 
     var email = document.getElementById('key-user-email').value.trim(); 
     var amount = parseInt(document.getElementById('level-add-amount').value) || 0; 
-    if(!email) { showToast('Masukkan email!', 'warning'); return; } 
-    if(amount <= 0) { showToast('Jumlah level harus lebih dari 0!', 'warning'); return; }
+    if(!email) { 
+        showToast('Masukkan email!', 'warning'); 
+        return; 
+    } 
+    if(amount <= 0) { 
+        showToast('Jumlah level harus lebih dari 0!', 'warning'); 
+        return; 
+    }
     
-    let result = await apiCall('addUserLevel', { email: email, amount: amount });
-    if(result && result.status === 'ok'){
-        let users = getUsers();
-        if(users[email]) {
-            users[email].level = (users[email].level || 1) + amount;
-            users[email].xp = users[email].level * 100;
-            saveUsers(users);
-            if(getCurrentUser()?.email === email){
-                let cu = getCurrentUser();
-                cu.level = users[email].level;
-                cu.xp = users[email].xp;
-                setCurrentUser(cu);
+    try {
+        let result = await apiCall('addUserLevel', { email: email, amount: amount });
+        if(result && result.status === 'ok'){
+            let users = getUsers();
+            if(users[email]) {
+                users[email].level = (users[email].level || 1) + amount;
+                users[email].xp = users[email].level * 100;
+                saveUsers(users);
+                if(getCurrentUser()?.email === email){
+                    let cu = getCurrentUser();
+                    cu.level = users[email].level;
+                    cu.xp = users[email].xp;
+                    setCurrentUser(cu);
+                }
             }
+            showToast('Berhasil tambah ' + amount + ' level untuk ' + email, 'info'); 
+            updateUserUI();
+        } else {
+            showToast('Gagal tambah level!', 'error');
         }
-        showToast('Berhasil tambah ' + amount + ' level untuk ' + email, 'info'); 
-        updateUserUI();
-    } else {
-        showToast('Gagal tambah level!', 'error');
+    } catch(e) {
+        showToast('Error: ' + e.message, 'error');
     }
     document.getElementById('key-user-email').value = ''; 
 }
 
 async function addUserGem() { 
-    if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
+    if(!currentUserIsOwner()) { 
+        showToast('Hanya owner!', 'warning'); 
+        return; 
+    } 
     var email = document.getElementById('key-user-email').value.trim(); 
     var amount = parseInt(document.getElementById('gem-add-amount').value) || 0; 
-    if(!email) { showToast('Masukkan email!', 'warning'); return; } 
-    if(amount <= 0) { showToast('Jumlah WibuGem harus lebih dari 0!', 'warning'); return; }
+    if(!email) { 
+        showToast('Masukkan email!', 'warning'); 
+        return; 
+    } 
+    if(amount <= 0) { 
+        showToast('Jumlah WibuGem harus lebih dari 0!', 'warning'); 
+        return; 
+    }
     
-    let result = await apiCall('addUserGem', { email: email, amount: amount });
-    if(result && result.status === 'ok'){
-        let users = getUsers();
-        if(users[email]) {
-            users[email].wibuGem = (users[email].wibuGem || 0) + amount;
-            saveUsers(users);
-            if(getCurrentUser()?.email === email){
-                let cu = getCurrentUser();
-                cu.wibuGem = users[email].wibuGem;
-                setCurrentUser(cu);
+    try {
+        let result = await apiCall('addUserGem', { email: email, amount: amount });
+        if(result && result.status === 'ok'){
+            let users = getUsers();
+            if(users[email]) {
+                users[email].wibuGem = (users[email].wibuGem || 0) + amount;
+                saveUsers(users);
+                if(getCurrentUser()?.email === email){
+                    let cu = getCurrentUser();
+                    cu.wibuGem = users[email].wibuGem;
+                    setCurrentUser(cu);
+                }
             }
+            showToast('Berhasil tambah ' + amount + ' WibuGem untuk ' + email, 'info'); 
+            updateUserUI();
+        } else {
+            showToast('Gagal tambah WibuGem!', 'error');
         }
-        showToast('Berhasil tambah ' + amount + ' WibuGem untuk ' + email, 'info'); 
-        updateUserUI();
-    } else {
-        showToast('Gagal tambah WibuGem!', 'error');
+    } catch(e) {
+        showToast('Error: ' + e.message, 'error');
     }
     document.getElementById('key-user-email').value = ''; 
 }
@@ -493,30 +585,32 @@ async function assignRoleWithExpired() {
     let users = getUsers();
     if(!users[email]) { showToast('User tidak ditemukan!','warning'); return; } 
     
-    let roleResult = await apiCall('setUserRole', { email: email, role: role });
-    let expiredDate = getExpiredDateFromDuration();
-    
-    if(role === 'premium') {
-        await apiCall('setPremiumStatus', { email: email, plan: 'premium', expiry: expiredDate });
-        setUserPremiumStatus(email, 'premium', expiredDate);
-        if(expiredDate) {
-            showToast(email+' sekarang '+role+' sampai '+new Date(expiredDate).toLocaleDateString(), 'info');
+    try {
+        let roleResult = await apiCall('setUserRole', { email: email, role: role });
+        let expiredDate = getExpiredDateFromDuration();
+        
+        if(role === 'premium') {
+            await apiCall('setPremiumStatus', { email: email, plan: 'premium', expiry: expiredDate });
+            setUserPremiumStatus(email, 'premium', expiredDate);
+            if(expiredDate) {
+                showToast(email+' sekarang '+role+' sampai '+new Date(expiredDate).toLocaleDateString(), 'info');
+            } else {
+                showToast(email+' sekarang '+role+' (no expired)', 'info');
+            }
+        } else if(role === 'admin') {
+            showToast(email+' sekarang '+role, 'info');
         } else {
-            showToast(email+' sekarang '+role+' (no expired)', 'info');
+            await apiCall('setPremiumStatus', { email: email, plan: 'free', expiry: null });
+            setUserPremiumStatus(email, 'free', null);
+            showToast(email+' sekarang '+role, 'info');
         }
-    } else if(role === 'admin') {
-        showToast(email+' sekarang '+role, 'info');
-    } else {
-        await apiCall('setPremiumStatus', { email: email, plan: 'free', expiry: null });
-        setUserPremiumStatus(email, 'free', null);
-        showToast(email+' sekarang '+role, 'info');
-    }
-    
-    if(roleResult?.status === 'ok'){
-        setUserRole(email, role);
-        renderRoleUsersList(); 
-    } else {
-        showToast('Gagal assign role!', 'error');
+        
+        if(roleResult?.status === 'ok'){
+            setUserRole(email, role);
+            renderRoleUsersList(); 
+        }
+    } catch(e) {
+        showToast('Error: ' + e.message, 'error');
     }
     
     document.getElementById('manage-email').value = ''; 
@@ -525,7 +619,15 @@ async function assignRoleWithExpired() {
 }
 
 function addNotification(notif) { let n = getNotifications(); n.unshift({ ...notif, id: Date.now(), read: false, timestamp: Date.now() }); saveNotifications(n); updateNotificationBadge(); }
-function sendBroadcastWithMedia() { var title = document.getElementById('broadcast-title').value.trim(); var msg = document.getElementById('broadcast-message').value.trim(); var mediaFile = document.getElementById('broadcast-media').files[0]; if(!title || !msg) { showToast('Judul dan pesan wajib!','warning'); return; } if(mediaFile) { var reader = new FileReader(); reader.onload = function(e) { var mediaUrl = e.target.result; var isVideo = mediaFile.type.startsWith('video/'); addNotification({ type:'broadcast', title:title, message:msg, media:mediaUrl, isVideo:isVideo, sender: getCurrentUser()?.username || 'Owner' }); showToast('Broadcast dengan media terkirim!','info'); }; reader.readAsDataURL(mediaFile); } else { addNotification({ type:'broadcast', title:title, message:msg, sender: getCurrentUser()?.username || 'Owner' }); showToast('Broadcast terkirim!','info'); } document.getElementById('broadcast-title').value = ''; document.getElementById('broadcast-message').value = ''; document.getElementById('broadcast-media').value = ''; document.getElementById('media-preview').innerHTML = ''; }
+function sendBroadcastWithMedia() { 
+    var title = document.getElementById('broadcast-title').value.trim(); 
+    var msg = document.getElementById('broadcast-message').value.trim(); 
+    if(!title || !msg) { showToast('Judul dan pesan wajib!','warning'); return; } 
+    addNotification({ type:'broadcast', title:title, message:msg, sender: getCurrentUser()?.username || 'Owner' });
+    showToast('Broadcast terkirim!','info'); 
+    document.getElementById('broadcast-title').value = ''; 
+    document.getElementById('broadcast-message').value = ''; 
+}
 function previewBroadcastMedia() { var file = document.getElementById('broadcast-media').files[0]; var preview = document.getElementById('media-preview'); if(!file) { preview.innerHTML = ''; return; } var reader = new FileReader(); reader.onload = function(e) { if(file.type.startsWith('image/')) preview.innerHTML = '<img src="'+e.target.result+'" class="media-preview">'; else if(file.type.startsWith('video/')) preview.innerHTML = '<video src="'+e.target.result+'" class="media-preview" controls></video>'; }; reader.readAsDataURL(file); }
 document.getElementById('broadcast-media')?.addEventListener('change', previewBroadcastMedia);
 
@@ -657,17 +759,68 @@ function renderViralAnime() {
     container.innerHTML = html;
 }
 
-function renderTopGlobalUsersCarousel() {
-    var users = getUsers();
-    var sorted = [];
-    for(var e in users) sorted.push({ email: e, username: users[e].username, level: users[e].level || 1, xp: users[e].xp || 0, avatar: users[e].avatar, userId: users[e].userId });
-    sorted.sort(function(a,b){ return b.xp - a.xp; }); sorted = sorted.slice(0,10);
-    var container = document.getElementById('top-global-users-carousel');
+// ========== TOP GLOBAL - PUBLIC (BISA DILIHAT SEMUA USER) ==========
+async function renderTopGlobalUsersCarousel() {
+    let res = await apiCall('getAllUsers');
+    let users = res?.users || getUsers();
+    let sorted = [];
+    for (var e in users) {
+        if (users[e]) {
+            sorted.push({
+                email: e,
+                username: users[e].username || e.split('@')[0],
+                level: users[e].level || 1,
+                xp: users[e].xp || 0,
+                avatar: users[e].avatar,
+                userId: users[e].userId
+            });
+        }
+    }
+    sorted.sort((a,b) => b.xp - a.xp);
+    sorted = sorted.slice(0,10);
+    let container = document.getElementById('top-global-users-carousel');
     if(!container) return;
     if(sorted.length === 0) { container.innerHTML = '<div class="text-center text-gray-500 text-xs py-4">Belum ada user</div>'; return; }
     var html = '';
-    for(var i = 0; i < sorted.length; i++) { var u = sorted[i]; var rankClass = i === 0 ? 'rank-1' : (i === 1 ? 'rank-2' : (i === 2 ? 'rank-3' : 'rank-other')); var badge = getBadge(u.level); html += '<div class="flex items-center gap-3 glass rounded-xl p-2 cursor-pointer" onclick="switchPage(\'account\')"><div class="w-8 h-8 rounded-full '+rankClass+' flex items-center justify-center text-white font-bold text-xs">#'+(i+1)+'</div><div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden">'+(u.avatar ? '<img src="'+u.avatar+'" class="w-full h-full object-cover">' : '<i data-lucide="user" class="w-4 h-4 text-white"></i>')+'</div><div class="flex-1 text-left"><div class="text-xs font-semibold">'+(u.username || u.email.split('@')[0])+'</div><div class="text-[8px] text-amber-400">'+badge.label+'</div><div class="text-[8px] text-gray-500 font-mono">'+ (u.userId || '#XXXXXX') +'</div></div><div class="text-right"><div class="text-xs font-bold text-amber-400">Lvl '+u.level+'</div><div class="text-[8px] text-gray-500">'+(u.xp||0)+' XP</div></div></div>'; }
-    container.innerHTML = html; lucide.createIcons();
+    for(var i = 0; i < sorted.length; i++) { 
+        var u = sorted[i]; 
+        var rankClass = i === 0 ? 'rank-1' : (i === 1 ? 'rank-2' : (i === 2 ? 'rank-3' : 'rank-other')); 
+        var badge = getBadge(u.level); 
+        html += '<div class="flex items-center gap-3 glass rounded-xl p-2 cursor-pointer" onclick="switchPage(\'account\')"><div class="w-8 h-8 rounded-full '+rankClass+' flex items-center justify-center text-white font-bold text-xs">#'+(i+1)+'</div><div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden">'+(u.avatar ? '<img src="'+u.avatar+'" class="w-full h-full object-cover">' : '<i data-lucide="user" class="w-4 h-4 text-white"></i>')+'</div><div class="flex-1 text-left"><div class="text-xs font-semibold">'+(u.username)+'</div><div class="text-[8px] text-amber-400">'+badge.label+'</div><div class="text-[8px] text-gray-500 font-mono">'+ (u.userId || '#XXXXXX') +'</div></div><div class="text-right"><div class="text-xs font-bold text-amber-400">Lvl '+u.level+'</div><div class="text-[8px] text-gray-500">'+(u.xp||0)+' XP</div></div></div>'; 
+    }
+    container.innerHTML = html; 
+    lucide.createIcons(); 
+}
+
+async function renderTopUsersList() {
+    let res = await apiCall('getAllUsers');
+    let users = res?.users || getUsers();
+    var sorted = [];
+    for(var e in users) {
+        if (users[e]) {
+            sorted.push({
+                email: e,
+                username: users[e].username || e.split('@')[0],
+                level: users[e].level || 1,
+                xp: users[e].xp || 0,
+                avatar: users[e].avatar,
+                userId: users[e].userId
+            });
+        }
+    }
+    sorted.sort((a,b) => b.xp - a.xp);
+    sorted = sorted.slice(0,20);
+    var container = document.getElementById('top-global-users-list');
+    if(!container) return;
+    var html = '';
+    for(var i=0;i<sorted.length;i++) { 
+        var u = sorted[i]; 
+        var rankClass = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'; 
+        var badge = getBadge(u.level); 
+        html += '<div class="flex items-center gap-3 glass rounded-2xl p-3 cursor-pointer" onclick="switchPage(\'account\')"><div class="w-9 h-9 rounded-xl '+rankClass+' flex items-center justify-center text-white font-black">'+(i+1)+'</div><div class="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden">'+(u.avatar ? '<img src="'+u.avatar+'" class="w-full h-full object-cover">' : '<i data-lucide="user" class="w-5 h-5 text-white"></i>')+'</div><div class="flex-1"><div class="font-semibold text-sm">'+(u.username)+'</div><div class="badge-pill bg-amber-500/20 text-amber-400">'+badge.label+'</div><div class="text-[9px] text-gray-500 font-mono">'+(u.userId||'#XXXXXX')+'</div></div><div class="text-right"><div class="text-sm font-bold text-amber-400">Lvl '+u.level+'</div><div class="text-[10px] text-gray-500">'+(u.xp||0)+' XP</div></div></div>'; 
+    }
+    container.innerHTML = html; 
+    lucide.createIcons(); 
 }
 
 function toggleFaq(element) { var faqItem = element.closest('.faq-item'); var answer = faqItem.querySelector('.faq-answer'); var icon = faqItem.querySelector('.faq-question i'); if(answer.classList.contains('open')) { answer.classList.remove('open'); if(icon) icon.classList.remove('rotate-180'); } else { answer.classList.add('open'); if(icon) icon.classList.add('rotate-180'); } }
@@ -710,7 +863,6 @@ function upgradeToPremium(plan) {
 function updateUserUIGuestMode() { var isGuest = DB.get('guest_mode')===true; var guestLogoutBtn = document.getElementById('guest-logout-container'); if(isGuest) { document.getElementById('sidebar-username').innerHTML = 'Guest Mode'; document.getElementById('sidebar-badge').innerHTML = 'Tamu'; if(guestLogoutBtn) guestLogoutBtn.classList.remove('hidden'); } else { if(guestLogoutBtn) guestLogoutBtn.classList.add('hidden'); } lucide.createIcons(); }
 function doLogout() { DB.del('current_user'); DB.del('guest_mode'); location.reload(); }
 
-function renderTopUsersList() { var users = getUsers(); var sorted = []; for(var e in users) sorted.push({email:e, username: users[e].username, level: users[e].level || 1, xp: users[e].xp || 0, avatar: users[e].avatar, userId: users[e].userId }); sorted.sort(function(a,b){ return b.xp - a.xp; }); sorted = sorted.slice(0,20); var container = document.getElementById('top-global-users-list'); if(!container) return; var html = ''; for(var i=0;i<sorted.length;i++) { var u = sorted[i]; var rankClass = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'; var badge = getBadge(u.level); html += '<div class="flex items-center gap-3 glass rounded-2xl p-3 cursor-pointer" onclick="switchPage(\'account\')"><div class="w-9 h-9 rounded-xl '+rankClass+' flex items-center justify-center text-white font-black">'+(i+1)+'</div><div class="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden">'+(u.avatar ? '<img src="'+u.avatar+'" class="w-full h-full object-cover">' : '<i data-lucide="user" class="w-5 h-5 text-white"></i>')+'</div><div class="flex-1"><div class="font-semibold text-sm">'+(u.username||u.email)+'</div><div class="badge-pill bg-amber-500/20 text-amber-400">'+badge.label+'</div><div class="text-[9px] text-gray-500 font-mono">'+(u.userId||'#XXXXXX')+'</div></div><div class="text-right"><div class="text-sm font-bold text-amber-400">Lvl '+u.level+'</div><div class="text-[10px] text-gray-500">'+(u.xp||0)+' XP</div></div></div>'; } container.innerHTML = html; lucide.createIcons(); }
 function renderTopAnimeList() { var top = getTopGlobal(); var container = document.getElementById('top-global-list'); if(!container) return; if(!top.length) { container.innerHTML='<div class="text-center text-gray-500">Belum ada data tontonan</div>'; return; } var html = ''; for(var i=0;i<top.length;i++) { var a = top[i]; var rankClass = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'; html += '<div class="flex items-center gap-3 glass rounded-2xl p-3 cursor-pointer" onclick="loadDetail(\''+a.url.replace(/'/g,"\\'")+'\')"><div class="w-9 h-9 rounded-xl '+rankClass+' flex items-center justify-center text-white font-black">'+(i+1)+'</div><img class="w-12 h-16 object-cover rounded-xl" src="'+a.cover+'" onerror="this.src=\'https://via.placeholder.com/300x400?text=Error\'"><div class="flex-1"><div class="font-semibold text-sm">'+a.title+'</div><div class="text-[11px] text-gray-400">'+a.count+' views</div></div></div>'; } container.innerHTML = html; }
 function renderHistory() { var history = getWatchHistory(); var container = document.getElementById('history-list'); if(!container) return; if(!history.length) { container.innerHTML='<div class="col-span-full text-center text-gray-500">Belum ada riwayat</div>'; return; } var html = ''; for(var i=0;i<Math.min(20,history.length);i++) { var a = history[i]; html += '<div class="cursor-pointer" onclick="loadDetail(\''+(a.url||'').replace(/'/g,"\\'")+'\')"><div class="rounded-2xl overflow-hidden aspect-[3/4] bg-surface"><img class="w-full h-full object-cover" src="'+a.cover+'" onerror="this.src=\'https://via.placeholder.com/300x400?text=Error\'"></div><div class="text-xs line-clamp-2 mt-1">'+a.title+'</div></div>'; } container.innerHTML = html; }
 function getTopGlobal() { var wd = getWatchData(); var result = []; for(var url in wd) result.push({ url: url, title: wd[url].title, cover: wd[url].cover, count: wd[url].count }); result.sort(function(a,b){ return b.count - a.count; }); return result.slice(0,20); }
@@ -786,7 +938,26 @@ function renderCurrentPage() {
 
 function switchPage(page) { currentPage=page; var pages = document.querySelectorAll('.page'); for(var i=0;i<pages.length;i++) pages[i].classList.add('hidden'); var targetPage = document.getElementById('page-'+page); if(targetPage) targetPage.classList.remove('hidden'); var navBtns = document.querySelectorAll('.nav-btn'); for(var i=0;i<navBtns.length;i++) { var btn = navBtns[i]; if(btn.dataset.page===page) btn.classList.add('text-amber-500'); else btn.classList.remove('text-amber-500'); } var searchContainer = document.getElementById('search-container'); if(searchContainer) searchContainer.style.display = page==='search'?'block':'none'; renderCurrentPage(); window.scrollTo({top:0}); if(notifPanelOpen) toggleNotificationPanel(); }
 function showToast(msg,type) { type = type || 'info'; var t=document.createElement('div'); t.className='fixed bottom-28 left-1/2 -translate-x-1/2 z-[2000] px-4 py-2 rounded-xl text-white text-xs font-semibold '+(type==='warning'?'bg-orange-500':'bg-amber-600'); t.innerText=msg; document.body.appendChild(t); setTimeout(function(){t.remove();},3000); }
-async function initApp() { lucide.createIcons(); await loadAllData(); switchPage('home'); updateUserUI(); loadChatMessages(); setInterval(function(){ if(currentPage==='home') { renderLatest(); renderHomeSchedule(); renderViralAnime(); renderTopGlobalUsersCarousel(); } if(currentPage==='top') { renderTopUsersList(); renderTopAnimeList(); renderChatPreview(); } }, 60000); }
+async function initApp() { 
+    lucide.createIcons(); 
+    await loadAllData(); 
+    switchPage('home'); 
+    updateUserUI(); 
+    loadChatMessages(); 
+    setInterval(function(){ 
+        if(currentPage==='home') { 
+            renderLatest(); 
+            renderHomeSchedule(); 
+            renderViralAnime(); 
+            renderTopGlobalUsersCarousel(); 
+        } 
+        if(currentPage==='top') { 
+            renderTopUsersList(); 
+            renderTopAnimeList(); 
+            renderChatPreview(); 
+        } 
+    }, 60000); 
+}
 
 // ========== GLOBAL CHAT SYSTEM WITH PROFILE ==========
 var chatMessages = [];
@@ -1032,9 +1203,19 @@ ensureOwnerAccount();
 var cu = getCurrentUser(); 
 var isGuest = DB.get('guest_mode')===true; 
 if(cu || isGuest) { 
-    if(!cu && isGuest) { document.getElementById('login-page').style.display = 'none'; initApp(); updateUserUIGuestMode(); showToast('Mode Tamu aktif - Maks 2 episode/anime, 480p','warning'); } 
-    else if(cu) { document.getElementById('login-page').style.display = 'none'; initApp(); } 
-} else { document.getElementById('login-page').style.display = 'flex'; }
+    if(!cu && isGuest) { 
+        document.getElementById('login-page').style.display = 'none'; 
+        initApp(); 
+        updateUserUIGuestMode(); 
+        showToast('Mode Tamu aktif - Maks 2 episode/anime, 480p','warning'); 
+    } 
+    else if(cu) { 
+        document.getElementById('login-page').style.display = 'none'; 
+        initApp(); 
+    } 
+} else { 
+    document.getElementById('login-page').style.display = 'flex'; 
+}
 
 document.getElementById('closeModalBtn')?.addEventListener('click', closeCommunityModal);
 
@@ -1069,182 +1250,19 @@ document.getElementById('closeModalBtn')?.addEventListener('click', closeCommuni
         if (loginForm) loginForm.style.pointerEvents = 'auto';
         if (registerForm) registerForm.style.pointerEvents = 'auto';
         
-        console.log('🔧 TOMBOL LOGIN/DAFTAR SUDAH BISA DI KLIK - ' + semuaTombol.length + ' tombol siap');
+        console.log('🔧 TOMBOL LOGIN/DAFTAR SUDAH BISA DI KLIK');
     }, 100);
 })();
 
-// ========== REALTIME API ==========
-const API_URL = window.location.origin + '/api.php';
-
-async function apiCall(action, body = null, query = '') {
-    let url = `${API_URL}?action=${action}`;
-    if (query) url += '&' + query;
-    try {
-        let res = await fetch(url, {
-            method: body ? 'POST' : 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            body: body ? JSON.stringify(body) : null
-        });
-        return await res.json();
-    } catch(e) { console.error('API Error:', e); return null; }
-}
-
-// UPDATE TOP GLOBAL USERS CAROUSEL - REALTIME
-window.renderTopGlobalUsersCarousel = async function() {
-    let res = await apiCall('getAllUsers');
-    let users = res?.users || getUsers();
-    let sorted = [];
-    for (var e in users) {
-        if (users[e]) {
-            sorted.push({
-                username: users[e].username || e.split('@')[0],
-                level: users[e].level || 1,
-                xp: users[e].xp || 0,
-                avatar: users[e].avatar,
-                userId: users[e].userId
-            });
-        }
-    }
-    sorted.sort((a,b) => b.xp - a.xp);
-    sorted = sorted.slice(0,10);
-    
-    let container = document.getElementById('top-global-users-carousel');
-    if(!container) return;
-    if(!sorted.length){
-        container.innerHTML = '<div class="text-center text-gray-500 text-xs py-4">Belum ada user</div>';
-        return;
-    }
-    let html = '';
-    for(let i=0;i<sorted.length;i++){
-        let u = sorted[i];
-        let rank = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
-        let badge = getBadge(u.level);
-        html += `<div class="flex items-center gap-3 glass rounded-xl p-2 cursor-pointer" onclick="switchPage('top')">
-            <div class="w-8 h-8 rounded-full ${rank} flex items-center justify-center text-white font-bold text-xs">${i+1}</div>
-            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center">
-                ${u.avatar ? '<img src="'+u.avatar+'" class="w-full h-full object-cover">' : '<i data-lucide="user" class="w-4 h-4 text-white"></i>'}
-            </div>
-            <div class="flex-1 text-left">
-                <div class="text-xs font-semibold">${escapeHtml(u.username)}</div>
-                <div class="text-[8px] text-amber-400">${badge.label}</div>
-                <div class="text-[8px] text-gray-500">${u.userId||'#XXXXXX'}</div>
-            </div>
-            <div class="text-right">
-                <div class="text-xs font-bold text-amber-400">Lvl ${u.level}</div>
-                <div class="text-[8px] text-gray-500">${u.xp} XP</div>
-            </div>
-        </div>`;
-    }
-    container.innerHTML = html;
-    if(window.lucide) lucide.createIcons();
-};
-
-// UPDATE TOP ANIME LIST - REALTIME
-window.renderTopAnimeList = async function() {
-    let res = await apiCall('getAllWatchData');
-    let data = res?.data || {};
-    let top = [];
-    for (var url in data) {
-        top.push({
-            url: url,
-            title: data[url].title,
-            cover: data[url].cover,
-            count: data[url].count
-        });
-    }
-    top.sort((a,b) => b.count - a.count);
-    top = top.slice(0,20);
-    
-    let container = document.getElementById('top-global-list');
-    if(!container) return;
-    if(!top.length){
-        container.innerHTML = '<div class="text-center text-gray-500">Belum ada data tontonan</div>';
-        return;
-    }
-    let html = '';
-    for(let i=0;i<top.length;i++){
-        let a = top[i];
-        let rank = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
-        html += `<div class="flex items-center gap-3 glass rounded-2xl p-3 cursor-pointer" onclick="loadDetail('${a.url.replace(/'/g,"\\'")}')">
-            <div class="w-9 h-9 rounded-xl ${rank} flex items-center justify-center text-white font-black">${i+1}</div>
-            <img class="w-12 h-16 object-cover rounded-xl" src="${a.cover}" onerror="this.src='https://via.placeholder.com/300x400?text=Error'">
-            <div class="flex-1"><div class="font-semibold text-sm">${escapeHtml(a.title)}</div><div class="text-[11px] text-gray-400">${a.count} views</div></div>
-        </div>`;
-    }
-    container.innerHTML = html;
-};
-
-// UPDATE TOP USERS LIST - REALTIME
-window.renderTopUsersList = async function() {
-    let res = await apiCall('getAllUsers');
-    let users = res?.users || getUsers();
-    let sorted = [];
-    for (var e in users) {
-        if (users[e]) {
-            sorted.push({
-                username: users[e].username || e.split('@')[0],
-                level: users[e].level || 1,
-                xp: users[e].xp || 0,
-                avatar: users[e].avatar,
-                userId: users[e].userId
-            });
-        }
-    }
-    sorted.sort((a,b) => b.xp - a.xp);
-    sorted = sorted.slice(0,20);
-    
-    let container = document.getElementById('top-global-users-list');
-    if(!container) return;
-    if(!sorted.length){
-        container.innerHTML = '<div class="text-center text-gray-500 text-sm py-4">Belum ada user</div>';
-        return;
-    }
-    let html = '';
-    for(let i=0;i<sorted.length;i++){
-        let u = sorted[i];
-        let rank = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
-        let badge = getBadge(u.level);
-        html += `<div class="flex items-center gap-3 glass rounded-2xl p-3 cursor-pointer" onclick="switchPage('account')">
-            <div class="w-9 h-9 rounded-xl ${rank} flex items-center justify-center text-white font-black">${i+1}</div>
-            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center">
-                ${u.avatar ? '<img src="'+u.avatar+'" class="w-full h-full object-cover">' : '<i data-lucide="user" class="w-5 h-5 text-white"></i>'}
-            </div>
-            <div class="flex-1">
-                <div class="font-semibold text-sm">${escapeHtml(u.username)}</div>
-                <div class="badge-pill bg-amber-500/20 text-amber-400">${badge.label}</div>
-                <div class="text-[9px] text-gray-500">${u.userId||'#XXXXXX'}</div>
-            </div>
-            <div class="text-right">
-                <div class="text-sm font-bold text-amber-400">Lvl ${u.level}</div>
-                <div class="text-[10px] text-gray-500">${u.xp} XP</div>
-            </div>
-        </div>`;
-    }
-    container.innerHTML = html;
-    if(window.lucide) lucide.createIcons();
-};
-
-// CHAT REALTIME - SYNC KE SERVER
-window.loadChatMessages = async function() {
-    let res = await apiCall('getChat');
-    if(res?.messages){
-        window.chatMessages = res.messages;
-        localStorage.setItem('ak_global_chat', JSON.stringify(res.messages));
-        if(typeof updateChatBadge === 'function') updateChatBadge();
-        if(typeof renderChatPreview === 'function') renderChatPreview();
-        if(document.getElementById('globalChatModal') && typeof renderChatMessagesFull === 'function') renderChatMessagesFull();
-    }
-};
-
-// POLLING REALTIME
+// ========== POLLING REALTIME ==========
 setInterval(async () => {
     if(window.currentPage === 'home' || window.currentPage === 'top'){
-        await window.renderTopGlobalUsersCarousel();
-        await window.renderTopUsersList();
-        await window.renderTopAnimeList();
+        await renderTopGlobalUsersCarousel();
+        await renderTopUsersList();
+        await renderTopAnimeList();
     }
-    await window.loadChatMessages();
+    await loadChatMessages();
 }, 5000);
 
-setTimeout(() => { window.loadChatMessages(); }, 1000);
-console.log('🔥 REALTIME ACTIVE - SEMUA FITUR JALAN');
+setTimeout(() => { loadChatMessages(); }, 1000);
+console.log('🔥 REALTIME ACTIVE - SEMUA FITUR JALAN, TOP GLOBAL BISA DILIHAT SEMUA USER');
