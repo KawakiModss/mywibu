@@ -500,7 +500,7 @@ function renderCurrentPage() {
     else if(currentPage==='movies') renderMovies(); 
     else if(currentPage==='browse' && isLoadingComplete) renderBrowsePage(); 
     else if(currentPage==='genres') renderGenres(); 
-    else if(currentPage==='top') { renderTopUsersList(); renderTopAnimeList(); } 
+    else if(currentPage==='top') { renderTopUsersList(); renderTopAnimeList(); renderChatPreview(); }
     else if(currentPage==='premium') renderPremiumPage(); 
     else if(currentPage==='history') renderHistory(); 
     else if(currentPage==='report') renderUserReports(); 
@@ -513,11 +513,262 @@ function renderCurrentPage() {
 
 function switchPage(page) { currentPage=page; var pages = document.querySelectorAll('.page'); for(var i=0;i<pages.length;i++) pages[i].classList.add('hidden'); var targetPage = document.getElementById('page-'+page); if(targetPage) targetPage.classList.remove('hidden'); var navBtns = document.querySelectorAll('.nav-btn'); for(var i=0;i<navBtns.length;i++) { var btn = navBtns[i]; if(btn.dataset.page===page) btn.classList.add('text-amber-500'); else btn.classList.remove('text-amber-500'); } var searchContainer = document.getElementById('search-container'); if(searchContainer) searchContainer.style.display = page==='search'?'block':'none'; renderCurrentPage(); window.scrollTo({top:0}); if(notifPanelOpen) toggleNotificationPanel(); }
 function showToast(msg,type) { type = type || 'info'; var t=document.createElement('div'); t.className='fixed bottom-28 left-1/2 -translate-x-1/2 z-[2000] px-4 py-2 rounded-xl text-white text-xs font-semibold '+(type==='warning'?'bg-orange-500':'bg-amber-600'); t.innerText=msg; document.body.appendChild(t); setTimeout(function(){t.remove();},3000); }
-async function initApp() { lucide.createIcons(); await loadAllData(); switchPage('home'); updateUserUI(); setInterval(function(){ if(currentPage==='home') { renderLatest(); renderHomeSchedule(); renderViralAnime(); renderTopGlobalUsersCarousel(); } if(currentPage==='top') { renderTopUsersList(); renderTopAnimeList(); } }, 60000); }
+async function initApp() { lucide.createIcons(); await loadAllData(); switchPage('home'); updateUserUI(); loadChatMessages(); setInterval(function(){ if(currentPage==='home') { renderLatest(); renderHomeSchedule(); renderViralAnime(); renderTopGlobalUsersCarousel(); } if(currentPage==='top') { renderTopUsersList(); renderTopAnimeList(); renderChatPreview(); } }, 60000); }
+
+// ========== GLOBAL CHAT SYSTEM WITH PROFILE ==========
+var chatMessages = [];
+
+function loadChatMessages() {
+    var saved = localStorage.getItem('ak_global_chat');
+    if (saved) {
+        chatMessages = JSON.parse(saved);
+    } else {
+        var cu = getCurrentUser();
+        chatMessages = [
+            {
+                id: Date.now(),
+                senderEmail: 'admin@mywibu.app',
+                senderName: 'Kawaki',
+                senderLevel: 9999,
+                senderAvatar: null,
+                senderUserId: '#123456',
+                message: 'simpen aja kalo ragu...',
+                timestamp: Date.now() - 3600000,
+                read: false
+            }
+        ];
+        saveChatMessages();
+    }
+    updateChatBadge();
+    renderChatPreview();
+}
+
+function saveChatMessages() {
+    localStorage.setItem('ak_global_chat', JSON.stringify(chatMessages));
+    updateChatBadge();
+    renderChatPreview();
+    if (window.chatChannel) {
+        window.chatChannel.postMessage({ type: 'CHAT_UPDATED', messages: chatMessages });
+    }
+}
+
+function updateChatBadge() {
+    var unread = chatMessages.filter(function(msg) { return !msg.read; }).length;
+    var badge = document.getElementById('chatNotificationBadge');
+    if (badge) {
+        if (unread > 0) {
+            badge.innerText = unread > 99 ? '99+' : unread;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+    }
+}
+
+function renderChatPreview() {
+    var container = document.getElementById('globalChatPreview');
+    if (!container) return;
+    
+    var lastMessages = chatMessages.slice(-10).reverse();
+    if (lastMessages.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-500 text-xs py-4">Belum ada chat. Jadi yang pertama!</div>';
+        return;
+    }
+    
+    var html = '';
+    for (var i = 0; i < lastMessages.length; i++) {
+        var msg = lastMessages[i];
+        var isOwner = msg.senderEmail === 'admin@mywibu.app';
+        var isAdmin = getUserRole(msg.senderEmail) === 'admin';
+        var badge = getBadge(msg.senderLevel || 1);
+        
+        html += `
+            <div class="glass rounded-xl p-3 cursor-pointer hover:bg-amber-500/10 transition" onclick="openGlobalChat()">
+                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    <div class="w-6 h-6 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden text-[10px] font-bold text-white">
+                        ${msg.senderName ? msg.senderName.charAt(0).toUpperCase() : '?'}
+                    </div>
+                    <span class="text-xs font-semibold">${escapeHtml(msg.senderName || 'Anonymous')}</span>
+                    ${isOwner || isAdmin ? '<i data-lucide="badge-check" class="w-3 h-3 text-amber-400"></i>' : ''}
+                    <span class="text-[8px] text-gray-500 font-mono">${msg.senderUserId || '#XXXXXX'}</span>
+                    <span class="badge-pill bg-amber-500/20 text-amber-400 text-[8px]">${badge.label}</span>
+                    <div class="text-[9px] text-gray-500 ml-auto">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+                </div>
+                <div class="text-xs text-gray-300 pl-8">${escapeHtml(msg.message)}</div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+    lucide.createIcons();
+}
+
+function openGlobalChat() {
+    for (var i = 0; i < chatMessages.length; i++) {
+        chatMessages[i].read = true;
+    }
+    saveChatMessages();
+    
+    var cu = getCurrentUser();
+    var isGuest = DB.get('guest_mode') === true;
+    
+    if (!cu && !isGuest) {
+        showToast('Login dulu buat chat!', 'warning');
+        return;
+    }
+    
+    var modal = document.createElement('div');
+    modal.id = 'globalChatModal';
+    modal.className = 'fixed inset-0 z-[500] bg-black/90 flex items-center justify-center';
+    modal.innerHTML = `
+        <div class="glass rounded-2xl w-full max-w-md mx-4 h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b border-amber-500/20">
+                <h3 class="font-bold text-amber-400"><i data-lucide="message-circle" class="w-4 h-4 inline"></i> GLOBAL CHAT</h3>
+                <button onclick="closeGlobalChat()" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div id="chatMessagesFull" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+            <div class="p-4 border-t border-amber-500/20 flex gap-2">
+                <div class="flex-1">
+                    <input type="text" id="chatInput" class="input-field" placeholder="Ketik pesan..." onkeypress="if(event.key==='Enter') sendChatMessage()">
+                </div>
+                <button onclick="sendChatMessage()" class="bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-2 rounded-xl text-white text-sm font-semibold">Kirim</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    renderChatMessagesFull();
+    lucide.createIcons();
+}
+
+function closeGlobalChat() {
+    var modal = document.getElementById('globalChatModal');
+    if (modal) modal.remove();
+}
+
+function renderChatMessagesFull() {
+    var container = document.getElementById('chatMessagesFull');
+    if (!container) return;
+    
+    if (chatMessages.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-500 text-sm py-10">Belum ada pesan. Jadi yang pertama chat!</div>';
+        return;
+    }
+    
+    var html = '';
+    for (var i = 0; i < chatMessages.length; i++) {
+        var msg = chatMessages[i];
+        var isOwner = msg.senderEmail === 'admin@mywibu.app';
+        var isAdmin = getUserRole(msg.senderEmail) === 'admin';
+        var badge = getBadge(msg.senderLevel || 1);
+        
+        html += `
+            <div class="glass rounded-xl p-3">
+                <div class="flex items-center gap-2 mb-2 flex-wrap">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden text-xs font-bold text-white">
+                        ${msg.senderName ? msg.senderName.charAt(0).toUpperCase() : '?'}
+                    </div>
+                    <span class="text-sm font-semibold">${escapeHtml(msg.senderName || 'Anonymous')}</span>
+                    ${isOwner || isAdmin ? '<i data-lucide="badge-check" class="w-4 h-4 text-amber-400"></i>' : ''}
+                    <span class="text-[9px] text-gray-500 font-mono">${msg.senderUserId || '#XXXXXX'}</span>
+                    <span class="badge-pill bg-amber-500/20 text-amber-400 text-[9px]">${badge.label}</span>
+                    <div class="text-[9px] text-gray-500 ml-auto">${new Date(msg.timestamp).toLocaleString()}</div>
+                </div>
+                <div class="text-sm text-gray-200 pl-10">${escapeHtml(msg.message)}</div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+    container.scrollTop = container.scrollHeight;
+    lucide.createIcons();
+}
+
+function sendChatMessage() {
+    var input = document.getElementById('chatInput');
+    var message = input.value.trim();
+    if (!message) return;
+    
+    var cu = getCurrentUser();
+    var isGuest = DB.get('guest_mode') === true;
+    
+    var senderEmail = '';
+    var senderName = '';
+    var senderLevel = 1;
+    var senderAvatar = null;
+    var senderUserId = '#000000';
+    
+    if (cu) {
+        senderEmail = cu.email;
+        senderName = cu.username || cu.email.split('@')[0];
+        senderLevel = cu.level || 1;
+        senderAvatar = cu.avatar;
+        senderUserId = cu.userId || '#000000';
+    } else if (isGuest) {
+        senderEmail = 'guest_' + Date.now();
+        senderName = 'Guest Mode';
+        senderLevel = 1;
+        senderUserId = '#GUEST';
+    } else {
+        showToast('Login dulu buat chat!', 'warning');
+        return;
+    }
+    
+    var newMsg = {
+        id: Date.now(),
+        senderEmail: senderEmail,
+        senderName: senderName,
+        senderLevel: senderLevel,
+        senderAvatar: senderAvatar,
+        senderUserId: senderUserId,
+        message: message,
+        timestamp: Date.now(),
+        read: false
+    };
+    
+    chatMessages.push(newMsg);
+    saveChatMessages();
+    
+    input.value = '';
+    renderChatMessagesFull();
+    
+    if (window.chatChannel) {
+        window.chatChannel.postMessage({ type: 'NEW_CHAT', message: newMsg });
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+window.chatChannel = new BroadcastChannel('animekyu_global_chat');
+window.chatChannel.onmessage = function(e) {
+    if (e.data.type === 'NEW_CHAT') {
+        chatMessages.push(e.data.message);
+        saveChatMessages();
+        if (document.getElementById('globalChatModal')) {
+            renderChatMessagesFull();
+        }
+    }
+    if (e.data.type === 'CHAT_UPDATED') {
+        chatMessages = e.data.messages;
+        renderChatPreview();
+        updateChatBadge();
+        if (document.getElementById('globalChatModal')) {
+            renderChatMessagesFull();
+        }
+    }
+};
 
 // Global window functions
 window.switchPage=switchPage; window.loadDetail=loadDetail; window.playEpisode=playEpisode; window.closePlayer=closePlayer; window.closeProfile=closeProfile; window.openProfile=openProfile; window.toggleSidebar=toggleSidebar; window.selectDay=selectDay; window.selectBrowseKey=selectBrowseKey; window.changeBrowsePage=changeBrowsePage; window.changeMoviesPage=changeMoviesPage; window.filterByGenre=filterByGenre; window.scrollToTop=scrollToTop; window.openSettings=openSettings; window.closeSettings=closeSettings; window.doLogout=doLogout; window.guestLogin=guestLogin; window.guestLogout=guestLogout; window.googleLogin=googleLogin; window.doLogin=doLogin; window.doRegister=doRegister; window.showLogin=showLogin; window.showRegister=showRegister; window.upgradeToPremium=upgradeToPremium; window.submitReportWithImage=submitReportWithImage; window.sendBroadcastWithMedia=sendBroadcastWithMedia; window.assignRoleWithExpired=assignRoleWithExpired; window.updateReportStatus=updateReportStatus; window.toggleNotificationPanel=toggleNotificationPanel; window.markNotificationRead=markNotificationRead; window.markAllNotificationsRead=markAllNotificationsRead; window.triggerAvatarUpload=triggerAvatarUpload; window.handleAvatarChange=handleAvatarChange; window.saveSettings=saveSettings; window.toggleCustomExpired=toggleCustomExpired; window.switchAccountTab=switchAccountTab; window.skipIklan=skipIklan; window.addUserKey=addUserKey; window.addUserLevel=addUserLevel; window.addUserGem=addUserGem; window.toggleFaq=toggleFaq; window.uploadAnimeWithEpisodes=uploadAnimeWithEpisodes;
 window.closeCommunityModal=closeCommunityModal;
+window.openGlobalChat = openGlobalChat;
+window.closeGlobalChat = closeGlobalChat;
+window.sendChatMessage = sendChatMessage;
 
 ensureOwnerAccount(); 
 var cu = getCurrentUser(); 
@@ -527,5 +778,207 @@ if(cu || isGuest) {
     else if(cu) { document.getElementById('login-page').classList.add('hidden'); initApp(); } 
 } else { document.getElementById('login-page').classList.remove('hidden'); }
 
-// Event listener untuk tombol close modal
 document.getElementById('closeModalBtn')?.addEventListener('click', closeCommunityModal);
+
+// ========== FORCE FIX TOMBOL LOGIN ==========
+(function() {
+    var loginPage = document.getElementById('login-page');
+    if (loginPage) {
+        loginPage.style.pointerEvents = 'auto';
+        loginPage.style.zIndex = '999999';
+    }
+    var semuaTombol = document.querySelectorAll('#login-page button, #login-form button, #register-form button, .btn-primary, .btn-google');
+    for (var i = 0; i < semuaTombol.length; i++) {
+        var btn = semuaTombol[i];
+        btn.style.pointerEvents = 'auto';
+        btn.style.cursor = 'pointer';
+        btn.style.zIndex = '999999';
+        btn.style.position = 'relative';
+        btn.disabled = false;
+    }
+    console.log('✅ TOMBOL LOGIN/DAFTAR SUDAH BISA DI KLIK');
+})();
+
+// ========== KONEKSI KE BACKEND REALTIME ==========
+const API_URL = window.location.origin + '/api.php';
+
+async function apiCall(action, body = null, query = '') {
+    let url = `${API_URL}?action=${action}`;
+    if (query) url += '&' + query;
+    let options = { method: 'GET' };
+    if (body) {
+        options = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        };
+    }
+    try {
+        let res = await fetch(url, options);
+        return await res.json();
+    } catch(e) { console.error('API Error:', e); return null; }
+}
+
+// ========== OVERRIDE FUNGSI GET USERS & SAVE USERS ==========
+const originalGetUsers = getUsers;
+window.getUsers = async function() {
+    let result = await apiCall('getAllUsers');
+    if (result?.users) return result.users;
+    return originalGetUsers();
+};
+
+const originalSaveUsers = saveUsers;
+window.saveUsers = function(users) {
+    originalSaveUsers(users);
+    apiCall('syncUsers', { users: users });
+};
+
+// ========== SYNC WATCH DATA ==========
+const originalSetWatchData = setWatchData;
+window.setWatchData = function(w) {
+    originalSetWatchData(w);
+    let cu = getCurrentUser();
+    if (cu?.email) {
+        apiCall('updateWatchData', { email: cu.email, watchData: w });
+    }
+};
+
+// ========== SYNC WATCH HISTORY ==========
+const originalSaveWatchHistory = saveWatchHistory;
+window.saveWatchHistory = function(h) {
+    originalSaveWatchHistory(h);
+    let cu = getCurrentUser();
+    if (cu?.email) {
+        apiCall('syncHistory', { email: cu.email, history: h });
+    }
+};
+
+// ========== SYNC USER STATS (XP, LEVEL, KEYS, GEM) ==========
+async function syncUserStats() {
+    let cu = getCurrentUser();
+    if (cu?.email) {
+        await apiCall('updateUserStats', {
+            email: cu.email,
+            stats: {
+                level: cu.level,
+                xp: cu.xp,
+                keys: cu.keys,
+                wibuGem: cu.wibuGem
+            }
+        });
+    }
+}
+
+// ========== POLLING REALTIME ==========
+setInterval(async () => {
+    if (currentPage === 'home' || currentPage === 'top') {
+        await renderTopGlobalUsersCarousel();
+        if (typeof renderTopUsersList === 'function') await renderTopUsersList();
+        if (typeof renderTopAnimeList === 'function') await renderTopAnimeList();
+    }
+    if (typeof loadChatMessages === 'function') await loadChatMessages();
+}, 5000);
+
+// ========== IKLAN LIMIT SYNC ==========
+const originalCheckAndResetIklanLimit = checkAndResetIklanLimit;
+window.checkAndResetIklanLimit = async function() {
+    let cu = getCurrentUser();
+    if (!cu?.email) return originalCheckAndResetIklanLimit();
+    let result = await apiCall('getIklanLimit', null, `email=${cu.email}`);
+    return (result?.count || 0) < 3;
+};
+
+const originalIncrementIklanCount = incrementIklanCount;
+window.incrementIklanCount = async function() {
+    let cu = getCurrentUser();
+    if (cu?.email) {
+        await apiCall('incrementIklan', { email: cu.email });
+    }
+    originalIncrementIklanCount();
+};
+
+// ========== CHAT REALTIME ==========
+window.loadChatMessages = async function() {
+    let result = await apiCall('getChat');
+    if (result?.messages) {
+        window.chatMessages = result.messages;
+        localStorage.setItem('ak_global_chat', JSON.stringify(window.chatMessages));
+        if (typeof updateChatBadge === 'function') updateChatBadge();
+        if (typeof renderChatPreview === 'function') renderChatPreview();
+        if (document.getElementById('globalChatModal')) {
+            if (typeof renderChatMessagesFull === 'function') renderChatMessagesFull();
+        }
+    }
+};
+
+window.sendChatMessageToServer = async function(message) {
+    let cu = getCurrentUser();
+    let isGuest = localStorage.getItem('guest_mode') === 'true';
+    
+    let senderEmail = cu?.email || 'guest_' + Date.now();
+    let senderName = cu?.username || (isGuest ? 'Guest Mode' : 'Anonymous');
+    let senderLevel = cu?.level || 1;
+    let senderUserId = cu?.userId || '#GUEST';
+    
+    let newMsg = {
+        id: Date.now(),
+        senderEmail: senderEmail,
+        senderName: senderName,
+        senderLevel: senderLevel,
+        senderUserId: senderUserId,
+        message: message,
+        timestamp: Date.now(),
+        read: false
+    };
+    
+    await apiCall('sendChat', { message: newMsg });
+    await loadChatMessages();
+};
+
+// OVERRIDE SEND CHAT MESSAGE
+if (typeof window.sendChatMessage === 'function') {
+    const originalSendChatMessage = window.sendChatMessage;
+    window.sendChatMessage = async function() {
+        let input = document.getElementById('chatInput');
+        let message = input?.value.trim();
+        if (message) {
+            await window.sendChatMessageToServer(message);
+            if (input) input.value = '';
+        }
+    };
+}
+
+// ========== BROADCAST NOTIFICATION ==========
+const originalSendBroadcastWithMedia = sendBroadcastWithMedia;
+window.sendBroadcastWithMedia = async function() {
+    if (!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; }
+    let title = document.getElementById('broadcast-title')?.value.trim();
+    let msg = document.getElementById('broadcast-message')?.value.trim();
+    if (!title || !msg) { showToast('Judul dan pesan wajib!', 'warning'); return; }
+    
+    await apiCall('broadcast', {
+        broadcast: {
+            type: 'broadcast',
+            title: title,
+            message: msg,
+            sender: getCurrentUser()?.username || 'Owner'
+        }
+    });
+    showToast('Broadcast terkirim ke semua user!', 'info');
+    document.getElementById('broadcast-title').value = '';
+    document.getElementById('broadcast-message').value = '';
+};
+
+// ========== NOTIFICATION GET ==========
+const originalGetNotifications = getNotifications;
+window.getNotifications = async function() {
+    let cu = getCurrentUser();
+    if (!cu?.email) return originalGetNotifications();
+    let result = await apiCall('getNotifications', null, `email=${cu.email}`);
+    return result?.notifications || [];
+};
+
+// ========== PANGGIL LOAD CHAT PERTAMA KALI ==========
+setTimeout(() => {
+    if (typeof loadChatMessages === 'function') loadChatMessages();
+}, 1000);

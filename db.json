@@ -1,0 +1,21 @@
+{
+  "users": {
+    "admin@mywibu.app": {
+      "username": "Kawaki",
+      "password": "KAWAICHAN9",
+      "level": 9999,
+      "xp": 999900,
+      "keys": 9999,
+      "wibuGem": 9999,
+      "userId": "#123456",
+      "joinDate": 1700000000000
+    }
+  },
+  "premium_status": {},
+  "user_roles": {},
+  "reports": [],
+  "watch_history": [],
+  "watch_data": {},
+  "notifications": {},
+  "custom_anime": []
+}
