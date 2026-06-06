@@ -219,7 +219,6 @@ function uploadAnimeWithEpisodes() {
 function getUserKeys(email) { var users = getUsers(); return (users[email] && users[email].keys !== undefined) ? users[email].keys : 0; }
 function setUserKeys(email, keys) { var users = getUsers(); if(users[email]) { users[email].keys = keys; saveUsers(users); if(getCurrentUser() && getCurrentUser().email === email) { var cu = getCurrentUser(); cu.keys = keys; setCurrentUser(cu); } } }
 
-// ========== OWNER FUNCTIONS - VIA API ==========
 async function addUserKey() { 
     if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
     var email = document.getElementById('key-user-email').value.trim(); 
@@ -1148,7 +1147,7 @@ window.setUserKeys = function(email, keys) {
     }
 };
 
-// POLLING REALTIME
+// POLLING REALTIME - PASTI UPDATE DATA DARI SERVER
 setInterval(async () => {
     if(window.currentPage === 'home' || window.currentPage === 'top'){
         await window.renderTopGlobalUsersCarousel();
@@ -1156,7 +1155,7 @@ setInterval(async () => {
         await window.renderTopAnimeList();
     }
     await window.loadChatMessages();
-}, 5000);
+}, 3000);
 
 setTimeout(() => { window.loadChatMessages(); }, 1000);
-console.log('🔥 REALTIME ACTIVE - SEMUA FITUR BENERAN JALAN');
+console.log('🔥 REALTIME ACTIVE - CHAT BISA, TOP GLOBAL BISA, OWNER PANEL BISA');

@@ -214,8 +214,8 @@ elseif ($action === 'sendChat') {
     $newMsg = $input['message'];
     
     if (!isset($data['chat_messages'])) $data['chat_messages'] = [];
-    array_push($data['chat_messages'], $newMsg);
-    if (count($data['chat_messages']) > 100) array_shift($data['chat_messages']);
+    array_unshift($data['chat_messages'], $newMsg);
+    if (count($data['chat_messages']) > 100) array_pop($data['chat_messages']);
     
     file_put_contents($dbFile, json_encode($data, JSON_PRETTY_PRINT));
     echo json_encode(['status' => 'ok']);
