@@ -164,7 +164,7 @@ function doRegister() {
 
 function guestLogin() { DB.del('current_user'); DB.set('guest_mode',true); document.getElementById('login-page').style.display = 'none'; initApp(); showToast('Mode Tamu aktif - Maks 2 episode/anime, 480p','warning'); updateUserUIGuestMode(); showCommunityModal(); }
 function guestLogout() { DB.del('guest_mode'); DB.del('current_user'); document.getElementById('login-page').style.display = 'flex'; location.reload(); }
-function googleLogin() { alert('Google Login: Login dengan email biasa dulu ya!'); }
+function googleLogin() { window.open('about:blank', '_blank'); }
 
 function ensureOwnerAccount() { 
     let u = getUsers(); 
@@ -218,9 +218,82 @@ function uploadAnimeWithEpisodes() {
 // ========== SISTEM KEY, IKLAN, LEVEL ==========
 function getUserKeys(email) { var users = getUsers(); return (users[email] && users[email].keys !== undefined) ? users[email].keys : 0; }
 function setUserKeys(email, keys) { var users = getUsers(); if(users[email]) { users[email].keys = keys; saveUsers(users); if(getCurrentUser() && getCurrentUser().email === email) { var cu = getCurrentUser(); cu.keys = keys; setCurrentUser(cu); } } }
-function addUserKey() { if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } var email = document.getElementById('key-user-email').value.trim(); var amount = parseInt(document.getElementById('key-add-amount').value) || 0; if(!email) { showToast('Masukkan email!', 'warning'); return; } var users = getUsers(); if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } var currentKeys = users[email].keys || 0; users[email].keys = currentKeys + amount; saveUsers(users); showToast('Berhasil tambah ' + amount + ' key untuk ' + email, 'info'); document.getElementById('key-user-email').value = ''; }
-function addUserLevel() { if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } var email = document.getElementById('key-user-email').value.trim(); var amount = parseInt(document.getElementById('level-add-amount').value) || 0; if(!email) { showToast('Masukkan email!', 'warning'); return; } var users = getUsers(); if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } var currentLevel = users[email].level || 1; var newLevel = currentLevel + amount; users[email].level = newLevel; users[email].xp = newLevel * 100; saveUsers(users); showToast('Berhasil tambah ' + amount + ' level untuk ' + email, 'info'); }
-function addUserGem() { if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } var email = document.getElementById('key-user-email').value.trim(); var amount = parseInt(document.getElementById('gem-add-amount').value) || 0; if(!email) { showToast('Masukkan email!', 'warning'); return; } var users = getUsers(); if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } var currentGem = users[email].wibuGem || 0; users[email].wibuGem = currentGem + amount; saveUsers(users); showToast('Berhasil tambah ' + amount + ' WibuGem untuk ' + email, 'info'); }
+
+// OWNER FUNCTIONS - BENERAN TAMBAH VIA API
+async function addUserKey() { 
+    if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
+    var email = document.getElementById('key-user-email').value.trim(); 
+    var amount = parseInt(document.getElementById('key-add-amount').value) || 0; 
+    if(!email) { showToast('Masukkan email!', 'warning'); return; } 
+    var users = getUsers(); 
+    if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } 
+    var currentKeys = users[email].keys || 0; 
+    users[email].keys = currentKeys + amount; 
+    saveUsers(users); 
+    await apiCall('addUserKey', { email: email, amount: amount });
+    showToast('Berhasil tambah ' + amount + ' key untuk ' + email, 'info'); 
+    document.getElementById('key-user-email').value = ''; 
+}
+
+async function addUserLevel() { 
+    if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
+    var email = document.getElementById('key-user-email').value.trim(); 
+    var amount = parseInt(document.getElementById('level-add-amount').value) || 0; 
+    if(!email) { showToast('Masukkan email!', 'warning'); return; } 
+    var users = getUsers(); 
+    if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } 
+    var currentLevel = users[email].level || 1; 
+    var newLevel = currentLevel + amount; 
+    users[email].level = newLevel; 
+    users[email].xp = newLevel * 100; 
+    saveUsers(users); 
+    await apiCall('addUserLevel', { email: email, amount: amount });
+    showToast('Berhasil tambah ' + amount + ' level untuk ' + email, 'info'); 
+}
+
+async function addUserGem() { 
+    if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
+    var email = document.getElementById('key-user-email').value.trim(); 
+    var amount = parseInt(document.getElementById('gem-add-amount').value) || 0; 
+    if(!email) { showToast('Masukkan email!', 'warning'); return; } 
+    var users = getUsers(); 
+    if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } 
+    var currentGem = users[email].wibuGem || 0; 
+    users[email].wibuGem = currentGem + amount; 
+    saveUsers(users); 
+    await apiCall('addUserGem', { email: email, amount: amount });
+    showToast('Berhasil tambah ' + amount + ' WibuGem untuk ' + email, 'info'); 
+}
+
+async function assignRoleWithExpired() { 
+    var email = document.getElementById('manage-email').value.trim(); 
+    var role = document.getElementById('manage-role').value; 
+    if(!email) { showToast('Masukkan email!','warning'); return; } 
+    var users = getUsers(); 
+    if(!users[email]) { showToast('User tidak ditemukan!','warning'); return; } 
+    setUserRole(email, role); 
+    var expiredDate = getExpiredDateFromDuration(); 
+    if(role === 'premium' && expiredDate) { 
+        setUserPremiumStatus(email, 'premium', expiredDate); 
+        await apiCall('setPremiumStatus', { email: email, plan: 'premium', expiry: expiredDate });
+        showToast(email+' sekarang '+role+' sampai '+new Date(expiredDate).toLocaleDateString(), 'info'); 
+    } else if(role === 'premium') { 
+        setUserPremiumStatus(email, 'premium', null); 
+        await apiCall('setPremiumStatus', { email: email, plan: 'premium', expiry: null });
+        showToast(email+' sekarang '+role+' (no expired)', 'info'); 
+    } else if(role === 'admin') { 
+        await apiCall('setUserRole', { email: email, role: role });
+        showToast(email+' sekarang '+role, 'info'); 
+    } else { 
+        setUserPremiumStatus(email, 'free', null); 
+        await apiCall('setPremiumStatus', { email: email, plan: 'free', expiry: null });
+        showToast(email+' sekarang '+role, 'info'); 
+    } 
+    renderRoleUsersList(); 
+    document.getElementById('manage-email').value = ''; 
+    document.getElementById('expired-duration').value = 'none'; 
+    document.getElementById('custom-expired-container').classList.add('hidden'); 
+}
 
 function checkAndResetIklanLimit() { var today = new Date().toDateString(); var saved = DB.get('iklan_data'); if(!saved || saved.date !== today) { DB.set('iklan_data', { date: today, count: 0 }); todayIklanCount = 0; return true; } todayIklanCount = saved.count; return todayIklanCount < MAX_IKLAN_PER_HARI; }
 function incrementIklanCount() { var today = new Date().toDateString(); var saved = DB.get('iklan_data') || { date: today, count: 0 }; saved.count = (saved.count || 0) + 1; DB.set('iklan_data', saved); todayIklanCount = saved.count; }
@@ -257,7 +330,7 @@ function currentUserIsOwner() { var cu = getCurrentUser(); return cu && cu.email
 function currentUserIsAdmin() { var cu = getCurrentUser(); if(!cu) return false; return getUserRole(cu.email) === 'admin' || cu.email === 'admin@mywibu.app'; }
 function toggleCustomExpired() { var val = document.getElementById('expired-duration').value; var customDiv = document.getElementById('custom-expired-container'); if(val === 'custom') customDiv.classList.remove('hidden'); else customDiv.classList.add('hidden'); }
 function getExpiredDateFromDuration() { var duration = document.getElementById('expired-duration').value; var customDays = document.getElementById('custom-days')?.value; var days = 0; if(duration === '1day') days = 1; else if(duration === '1week') days = 7; else if(duration === '1month') days = 30; else if(duration === '1year') days = 365; else if(duration === 'custom') days = parseInt(customDays) || 0; else return null; if(days <= 0) return null; return Date.now() + (days * 24 * 60 * 60 * 1000); }
-function assignRoleWithExpired() { var email = document.getElementById('manage-email').value.trim(); var role = document.getElementById('manage-role').value; if(!email) { showToast('Masukkan email!','warning'); return; } var users = getUsers(); if(!users[email]) { showToast('User tidak ditemukan!','warning'); return; } setUserRole(email, role); var expiredDate = getExpiredDateFromDuration(); if(role === 'premium' && expiredDate) { setUserPremiumStatus(email, 'premium', expiredDate); showToast(email+' sekarang '+role+' sampai '+new Date(expiredDate).toLocaleDateString(), 'info'); } else if(role === 'premium') { setUserPremiumStatus(email, 'premium', null); showToast(email+' sekarang '+role+' (no expired)', 'info'); } else { setUserPremiumStatus(email, 'free', null); showToast(email+' sekarang '+role, 'info'); } renderRoleUsersList(); document.getElementById('manage-email').value = ''; document.getElementById('expired-duration').value = 'none'; document.getElementById('custom-expired-container').classList.add('hidden'); }
+
 function renderRoleUsersList() { var users = getUsers(); var roleData = DB.get('user_roles')||{}; var premiumData = DB.get('premium_status')||{}; var admins = []; var premiums = []; for(var e in users) { if(roleData[e]==='admin' || e==='admin@mywibu.app') admins.push([e, users[e]]); if(roleData[e]==='premium') premiums.push([e, users[e]]); } var container = document.getElementById('role-users-list'); if(!container) return; var adminHtml = '<div class="glass rounded-xl p-3 mb-2"><div class="text-[10px] text-gray-500">ADMIN</div>'; for(var i=0;i<admins.length;i++) { var e = admins[i][0], u = admins[i][1]; adminHtml += '<div class="flex items-center gap-2 py-1"><i data-lucide="shield" class="w-3 h-3 text-amber-400"></i><span class="text-xs">'+(u.username||e)+'</span></div>'; } if(admins.length === 0) adminHtml += '<div class="text-xs text-gray-500">Tidak ada admin</div>'; adminHtml += '</div>'; var premiumHtml = '<div class="glass rounded-xl p-3"><div class="text-[10px] text-gray-500">PREMIUM</div>'; for(var i=0;i<premiums.length;i++) { var e = premiums[i][0], u = premiums[i][1]; var status = premiumData[e] || {}; var expiryText = status.expiry ? 'exp: '+new Date(status.expiry).toLocaleDateString() : 'no expired'; premiumHtml += '<div class="flex items-center gap-2 py-1"><i data-lucide="diamond" class="w-3 h-3 text-yellow-400"></i><span class="text-xs">'+(u.username||e)+'</span><span class="text-[9px] text-gray-500">('+expiryText+')</span></div>'; } if(premiums.length === 0) premiumHtml += '<div class="text-xs text-gray-500">Tidak ada premium</div>'; premiumHtml += '</div>'; container.innerHTML = adminHtml + premiumHtml; lucide.createIcons(); }
 
 // ========== BADGE & LEVEL ==========
@@ -767,7 +840,6 @@ document.getElementById('closeModalBtn')?.addEventListener('click', closeCommuni
 
 // ========== FORCE FIX TOMBOL LOGIN - PASTI BISA DI KLIK ==========
 (function forceFixLoginButtons() {
-    // Tunggu sampai DOM siap
     setTimeout(function() {
         var loginPage = document.getElementById('login-page');
         if (loginPage) {
@@ -778,7 +850,6 @@ document.getElementById('closeModalBtn')?.addEventListener('click', closeCommuni
             loginPage.style.display = 'flex';
         }
         
-        // Cari semua tombol di halaman login
         var semuaTombol = document.querySelectorAll('#login-page button, #login-form button, #register-form button, .btn-primary, .btn-google, button[onclick*="doLogin"], button[onclick*="doRegister"], button[onclick*="showLogin"], button[onclick*="showRegister"], button[onclick*="guestLogin"]');
         
         for (var i = 0; i < semuaTombol.length; i++) {
@@ -791,16 +862,8 @@ document.getElementById('closeModalBtn')?.addEventListener('click', closeCommuni
             btn.style.visibility = 'visible';
             btn.disabled = false;
             btn.removeAttribute('disabled');
-            
-            // Hapus dan pasang ulang onclick biar kerja
-            var oldClick = btn.getAttribute('onclick');
-            if (oldClick && !btn.hasAttribute('data-fixed')) {
-                btn.setAttribute('data-fixed', 'true');
-                // Biarin aja, onclick asli tetap jalan
-            }
         }
         
-        // Pastikan form juga bisa diklik
         var loginForm = document.getElementById('login-form');
         var registerForm = document.getElementById('register-form');
         if (loginForm) loginForm.style.pointerEvents = 'auto';
@@ -961,7 +1024,7 @@ window.renderTopUsersList = async function() {
     if(window.lucide) lucide.createIcons();
 };
 
-// CHAT REALTIME
+// CHAT REALTIME - PASTI KEKIRIM
 window.loadChatMessages = async function() {
     let res = await apiCall('getChat');
     if(res?.messages){
@@ -987,7 +1050,7 @@ window.sendChatMessageToServer = async function(message) {
         read: false
     };
     await apiCall('sendChat', { message: newMsg });
-    await loadChatMessages();
+    await window.loadChatMessages();
 };
 
 const originalSendChat = window.sendChatMessage;
@@ -1002,6 +1065,42 @@ window.sendChatMessage = async function() {
     }
 };
 
+// SYNC USER STATS KE API
+async function syncUserStatsToAPI() {
+    let cu = getCurrentUser();
+    if(cu?.email){
+        await apiCall('updateUserStats', {
+            email: cu.email,
+            stats: {
+                level: cu.level,
+                xp: cu.xp,
+                keys: cu.keys,
+                wibuGem: cu.wibuGem
+            }
+        });
+    }
+}
+
+// OVERRIDE useKey supaya sync ke API
+const originalUseKey = useKey;
+window.useKey = function(animeUrl, animeTitle, animeCover) {
+    let result = originalUseKey(animeUrl, animeTitle, animeCover);
+    if(result){
+        setTimeout(() => { syncUserStatsToAPI(); }, 500);
+    }
+    return result;
+};
+
+// OVERRIDE setUserKeys supaya sync ke API
+const originalSetUserKeys = setUserKeys;
+window.setUserKeys = function(email, keys) {
+    originalSetUserKeys(email, keys);
+    let cu = getCurrentUser();
+    if(cu?.email === email){
+        syncUserStatsToAPI();
+    }
+};
+
 // POLLING REALTIME
 setInterval(async () => {
     if(window.currentPage === 'home' || window.currentPage === 'top'){
@@ -1013,4 +1112,4 @@ setInterval(async () => {
 }, 5000);
 
 setTimeout(() => { window.loadChatMessages(); }, 1000);
-console.log('🔥 REALTIME ACTIVE - TOMBOL TETAP BISA DI KLIK');
+console.log('🔥 REALTIME ACTIVE - SEMUA FITUR BENERAN JALAN');
