@@ -120,27 +120,15 @@ function addToHistory(anime) {
 function showLogin() { 
     var loginForm = document.getElementById('login-form');
     var registerForm = document.getElementById('register-form');
-    if(loginForm) {
-        loginForm.style.display = 'flex';
-        loginForm.style.pointerEvents = 'auto';
-    }
-    if(registerForm) {
-        registerForm.style.display = 'none';
-        registerForm.classList.add('hidden');
-    }
+    if(loginForm) loginForm.style.display = 'flex';
+    if(registerForm) registerForm.style.display = 'none';
 }
 
 function showRegister() { 
     var loginForm = document.getElementById('login-form');
     var registerForm = document.getElementById('register-form');
-    if(loginForm) {
-        loginForm.style.display = 'none';
-    }
-    if(registerForm) {
-        registerForm.style.display = 'flex';
-        registerForm.style.pointerEvents = 'auto';
-        registerForm.classList.remove('hidden');
-    }
+    if(loginForm) loginForm.style.display = 'none';
+    if(registerForm) registerForm.style.display = 'flex';
 }
 
 function doLogin() { 
@@ -151,7 +139,7 @@ function doLogin() {
     if(users[email].password !== pass) { alert('Password salah'); return; } 
     DB.del('guest_mode'); 
     setCurrentUser({ email: email, ...users[email] }); 
-    document.getElementById('login-page').classList.add('hidden'); 
+    document.getElementById('login-page').style.display = 'none'; 
     updateUserUI(); 
     initApp(); 
 }
@@ -169,13 +157,13 @@ function doRegister() {
     saveUsers(users); 
     setUserPremiumStatus(email, 'free', null); 
     setCurrentUser({ email: email, ...users[email] }); 
-    document.getElementById('login-page').classList.add('hidden'); 
+    document.getElementById('login-page').style.display = 'none'; 
     updateUserUI(); 
     initApp(); 
 }
 
-function guestLogin() { DB.del('current_user'); DB.set('guest_mode',true); document.getElementById('login-page').classList.add('hidden'); initApp(); showToast('Mode Tamu aktif - Maks 2 episode/anime, 480p','warning'); updateUserUIGuestMode(); showCommunityModal(); }
-function guestLogout() { DB.del('guest_mode'); DB.del('current_user'); document.getElementById('login-page').classList.remove('hidden'); location.reload(); }
+function guestLogin() { DB.del('current_user'); DB.set('guest_mode',true); document.getElementById('login-page').style.display = 'none'; initApp(); showToast('Mode Tamu aktif - Maks 2 episode/anime, 480p','warning'); updateUserUIGuestMode(); showCommunityModal(); }
+function guestLogout() { DB.del('guest_mode'); DB.del('current_user'); document.getElementById('login-page').style.display = 'flex'; location.reload(); }
 function googleLogin() { alert('Google Login: Login dengan email biasa dulu ya!'); }
 
 function ensureOwnerAccount() { 
@@ -771,29 +759,55 @@ ensureOwnerAccount();
 var cu = getCurrentUser(); 
 var isGuest = DB.get('guest_mode')===true; 
 if(cu || isGuest) { 
-    if(!cu && isGuest) { document.getElementById('login-page').classList.add('hidden'); initApp(); updateUserUIGuestMode(); showToast('Mode Tamu aktif - Maks 2 episode/anime, 480p','warning'); } 
-    else if(cu) { document.getElementById('login-page').classList.add('hidden'); initApp(); } 
-} else { document.getElementById('login-page').classList.remove('hidden'); }
+    if(!cu && isGuest) { document.getElementById('login-page').style.display = 'none'; initApp(); updateUserUIGuestMode(); showToast('Mode Tamu aktif - Maks 2 episode/anime, 480p','warning'); } 
+    else if(cu) { document.getElementById('login-page').style.display = 'none'; initApp(); } 
+} else { document.getElementById('login-page').style.display = 'flex'; }
 
 document.getElementById('closeModalBtn')?.addEventListener('click', closeCommunityModal);
 
-// ========== FORCE FIX TOMBOL LOGIN ==========
-(function() {
-    var loginPage = document.getElementById('login-page');
-    if (loginPage) {
-        loginPage.style.pointerEvents = 'auto';
-        loginPage.style.zIndex = '999999';
-    }
-    var semuaTombol = document.querySelectorAll('#login-page button, #login-form button, #register-form button, .btn-primary, .btn-google');
-    for (var i = 0; i < semuaTombol.length; i++) {
-        var btn = semuaTombol[i];
-        btn.style.pointerEvents = 'auto';
-        btn.style.cursor = 'pointer';
-        btn.style.zIndex = '999999';
-        btn.style.position = 'relative';
-        btn.disabled = false;
-    }
-    console.log('✅ TOMBOL LOGIN/DAFTAR SUDAH BISA DI KLIK');
+// ========== FORCE FIX TOMBOL LOGIN - PASTI BISA DI KLIK ==========
+(function forceFixLoginButtons() {
+    // Tunggu sampai DOM siap
+    setTimeout(function() {
+        var loginPage = document.getElementById('login-page');
+        if (loginPage) {
+            loginPage.style.pointerEvents = 'auto';
+            loginPage.style.zIndex = '999999';
+            loginPage.style.position = 'fixed';
+            loginPage.style.inset = '0';
+            loginPage.style.display = 'flex';
+        }
+        
+        // Cari semua tombol di halaman login
+        var semuaTombol = document.querySelectorAll('#login-page button, #login-form button, #register-form button, .btn-primary, .btn-google, button[onclick*="doLogin"], button[onclick*="doRegister"], button[onclick*="showLogin"], button[onclick*="showRegister"], button[onclick*="guestLogin"]');
+        
+        for (var i = 0; i < semuaTombol.length; i++) {
+            var btn = semuaTombol[i];
+            btn.style.pointerEvents = 'auto';
+            btn.style.cursor = 'pointer';
+            btn.style.zIndex = '999999';
+            btn.style.position = 'relative';
+            btn.style.opacity = '1';
+            btn.style.visibility = 'visible';
+            btn.disabled = false;
+            btn.removeAttribute('disabled');
+            
+            // Hapus dan pasang ulang onclick biar kerja
+            var oldClick = btn.getAttribute('onclick');
+            if (oldClick && !btn.hasAttribute('data-fixed')) {
+                btn.setAttribute('data-fixed', 'true');
+                // Biarin aja, onclick asli tetap jalan
+            }
+        }
+        
+        // Pastikan form juga bisa diklik
+        var loginForm = document.getElementById('login-form');
+        var registerForm = document.getElementById('register-form');
+        if (loginForm) loginForm.style.pointerEvents = 'auto';
+        if (registerForm) registerForm.style.pointerEvents = 'auto';
+        
+        console.log('🔧 FORCE FIX TOMBOL AKTIF - ' + semuaTombol.length + ' tombol sudah siap');
+    }, 100);
 })();
 
 // ========== REALTIME API ==========
@@ -816,13 +830,20 @@ async function apiCall(action, body = null, query = '') {
 window.renderTopGlobalUsersCarousel = async function() {
     let res = await apiCall('getAllUsers');
     let users = res?.users || getUsers();
-    let sorted = Object.values(users).map(u => ({
-        username: u.username || 'Unknown',
-        level: u.level || 1,
-        xp: u.xp || 0,
-        avatar: u.avatar,
-        userId: u.userId
-    })).sort((a,b) => b.xp - a.xp).slice(0,10);
+    let sorted = [];
+    for (var e in users) {
+        if (users[e]) {
+            sorted.push({
+                username: users[e].username || e.split('@')[0],
+                level: users[e].level || 1,
+                xp: users[e].xp || 0,
+                avatar: users[e].avatar,
+                userId: users[e].userId
+            });
+        }
+    }
+    sorted.sort((a,b) => b.xp - a.xp);
+    sorted = sorted.slice(0,10);
     
     let container = document.getElementById('top-global-users-carousel');
     if(!container) return;
@@ -859,9 +880,17 @@ window.renderTopGlobalUsersCarousel = async function() {
 window.renderTopAnimeList = async function() {
     let res = await apiCall('getAllWatchData');
     let data = res?.data || {};
-    let top = Object.entries(data).map(([url,info]) => ({
-        url, title: info.title, cover: info.cover, count: info.count
-    })).sort((a,b) => b.count - a.count).slice(0,20);
+    let top = [];
+    for (var url in data) {
+        top.push({
+            url: url,
+            title: data[url].title,
+            cover: data[url].cover,
+            count: data[url].count
+        });
+    }
+    top.sort((a,b) => b.count - a.count);
+    top = top.slice(0,20);
     
     let container = document.getElementById('top-global-list');
     if(!container) return;
@@ -886,13 +915,20 @@ window.renderTopAnimeList = async function() {
 window.renderTopUsersList = async function() {
     let res = await apiCall('getAllUsers');
     let users = res?.users || getUsers();
-    let sorted = Object.values(users).map(u => ({
-        username: u.username || 'Unknown',
-        level: u.level || 1,
-        xp: u.xp || 0,
-        avatar: u.avatar,
-        userId: u.userId
-    })).sort((a,b) => b.xp - a.xp).slice(0,20);
+    let sorted = [];
+    for (var e in users) {
+        if (users[e]) {
+            sorted.push({
+                username: users[e].username || e.split('@')[0],
+                level: users[e].level || 1,
+                xp: users[e].xp || 0,
+                avatar: users[e].avatar,
+                userId: users[e].userId
+            });
+        }
+    }
+    sorted.sort((a,b) => b.xp - a.xp);
+    sorted = sorted.slice(0,20);
     
     let container = document.getElementById('top-global-users-list');
     if(!container) return;
@@ -977,4 +1013,4 @@ setInterval(async () => {
 }, 5000);
 
 setTimeout(() => { window.loadChatMessages(); }, 1000);
-console.log(' REALTIME ACTIVE - TOMBOL TETAP BISA DI KLIK');
+console.log('🔥 REALTIME ACTIVE - TOMBOL TETAP BISA DI KLIK');
