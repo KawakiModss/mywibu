@@ -219,19 +219,31 @@ function uploadAnimeWithEpisodes() {
 function getUserKeys(email) { var users = getUsers(); return (users[email] && users[email].keys !== undefined) ? users[email].keys : 0; }
 function setUserKeys(email, keys) { var users = getUsers(); if(users[email]) { users[email].keys = keys; saveUsers(users); if(getCurrentUser() && getCurrentUser().email === email) { var cu = getCurrentUser(); cu.keys = keys; setCurrentUser(cu); } } }
 
-// OWNER FUNCTIONS - BENERAN TAMBAH VIA API
+// ========== OWNER FUNCTIONS - VIA API ==========
 async function addUserKey() { 
     if(!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; } 
     var email = document.getElementById('key-user-email').value.trim(); 
     var amount = parseInt(document.getElementById('key-add-amount').value) || 0; 
     if(!email) { showToast('Masukkan email!', 'warning'); return; } 
-    var users = getUsers(); 
-    if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } 
-    var currentKeys = users[email].keys || 0; 
-    users[email].keys = currentKeys + amount; 
-    saveUsers(users); 
-    await apiCall('addUserKey', { email: email, amount: amount });
-    showToast('Berhasil tambah ' + amount + ' key untuk ' + email, 'info'); 
+    if(amount <= 0) { showToast('Jumlah key harus lebih dari 0!', 'warning'); return; }
+    
+    let result = await apiCall('addUserKey', { email: email, amount: amount });
+    if(result && result.status === 'ok'){
+        let users = getUsers();
+        if(users[email]) {
+            users[email].keys = (users[email].keys || 0) + amount;
+            saveUsers(users);
+            if(getCurrentUser()?.email === email){
+                let cu = getCurrentUser();
+                cu.keys = users[email].keys;
+                setCurrentUser(cu);
+            }
+        }
+        showToast('Berhasil tambah ' + amount + ' key untuk ' + email, 'info'); 
+        updateUserUI();
+    } else {
+        showToast('Gagal tambah key!', 'error');
+    }
     document.getElementById('key-user-email').value = ''; 
 }
 
@@ -240,15 +252,28 @@ async function addUserLevel() {
     var email = document.getElementById('key-user-email').value.trim(); 
     var amount = parseInt(document.getElementById('level-add-amount').value) || 0; 
     if(!email) { showToast('Masukkan email!', 'warning'); return; } 
-    var users = getUsers(); 
-    if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } 
-    var currentLevel = users[email].level || 1; 
-    var newLevel = currentLevel + amount; 
-    users[email].level = newLevel; 
-    users[email].xp = newLevel * 100; 
-    saveUsers(users); 
-    await apiCall('addUserLevel', { email: email, amount: amount });
-    showToast('Berhasil tambah ' + amount + ' level untuk ' + email, 'info'); 
+    if(amount <= 0) { showToast('Jumlah level harus lebih dari 0!', 'warning'); return; }
+    
+    let result = await apiCall('addUserLevel', { email: email, amount: amount });
+    if(result && result.status === 'ok'){
+        let users = getUsers();
+        if(users[email]) {
+            users[email].level = (users[email].level || 1) + amount;
+            users[email].xp = users[email].level * 100;
+            saveUsers(users);
+            if(getCurrentUser()?.email === email){
+                let cu = getCurrentUser();
+                cu.level = users[email].level;
+                cu.xp = users[email].xp;
+                setCurrentUser(cu);
+            }
+        }
+        showToast('Berhasil tambah ' + amount + ' level untuk ' + email, 'info'); 
+        updateUserUI();
+    } else {
+        showToast('Gagal tambah level!', 'error');
+    }
+    document.getElementById('key-user-email').value = ''; 
 }
 
 async function addUserGem() { 
@@ -256,40 +281,62 @@ async function addUserGem() {
     var email = document.getElementById('key-user-email').value.trim(); 
     var amount = parseInt(document.getElementById('gem-add-amount').value) || 0; 
     if(!email) { showToast('Masukkan email!', 'warning'); return; } 
-    var users = getUsers(); 
-    if(!users[email]) { showToast('User tidak ditemukan!', 'warning'); return; } 
-    var currentGem = users[email].wibuGem || 0; 
-    users[email].wibuGem = currentGem + amount; 
-    saveUsers(users); 
-    await apiCall('addUserGem', { email: email, amount: amount });
-    showToast('Berhasil tambah ' + amount + ' WibuGem untuk ' + email, 'info'); 
+    if(amount <= 0) { showToast('Jumlah WibuGem harus lebih dari 0!', 'warning'); return; }
+    
+    let result = await apiCall('addUserGem', { email: email, amount: amount });
+    if(result && result.status === 'ok'){
+        let users = getUsers();
+        if(users[email]) {
+            users[email].wibuGem = (users[email].wibuGem || 0) + amount;
+            saveUsers(users);
+            if(getCurrentUser()?.email === email){
+                let cu = getCurrentUser();
+                cu.wibuGem = users[email].wibuGem;
+                setCurrentUser(cu);
+            }
+        }
+        showToast('Berhasil tambah ' + amount + ' WibuGem untuk ' + email, 'info'); 
+        updateUserUI();
+    } else {
+        showToast('Gagal tambah WibuGem!', 'error');
+    }
+    document.getElementById('key-user-email').value = ''; 
 }
 
 async function assignRoleWithExpired() { 
     var email = document.getElementById('manage-email').value.trim(); 
     var role = document.getElementById('manage-role').value; 
     if(!email) { showToast('Masukkan email!','warning'); return; } 
-    var users = getUsers(); 
+    
+    let users = getUsers();
     if(!users[email]) { showToast('User tidak ditemukan!','warning'); return; } 
-    setUserRole(email, role); 
-    var expiredDate = getExpiredDateFromDuration(); 
-    if(role === 'premium' && expiredDate) { 
-        setUserPremiumStatus(email, 'premium', expiredDate); 
+    
+    let roleResult = await apiCall('setUserRole', { email: email, role: role });
+    let expiredDate = getExpiredDateFromDuration();
+    
+    if(role === 'premium') {
         await apiCall('setPremiumStatus', { email: email, plan: 'premium', expiry: expiredDate });
-        showToast(email+' sekarang '+role+' sampai '+new Date(expiredDate).toLocaleDateString(), 'info'); 
-    } else if(role === 'premium') { 
-        setUserPremiumStatus(email, 'premium', null); 
-        await apiCall('setPremiumStatus', { email: email, plan: 'premium', expiry: null });
-        showToast(email+' sekarang '+role+' (no expired)', 'info'); 
-    } else if(role === 'admin') { 
-        await apiCall('setUserRole', { email: email, role: role });
-        showToast(email+' sekarang '+role, 'info'); 
-    } else { 
-        setUserPremiumStatus(email, 'free', null); 
+        setUserPremiumStatus(email, 'premium', expiredDate);
+        if(expiredDate) {
+            showToast(email+' sekarang '+role+' sampai '+new Date(expiredDate).toLocaleDateString(), 'info');
+        } else {
+            showToast(email+' sekarang '+role+' (no expired)', 'info');
+        }
+    } else if(role === 'admin') {
+        showToast(email+' sekarang '+role, 'info');
+    } else {
         await apiCall('setPremiumStatus', { email: email, plan: 'free', expiry: null });
-        showToast(email+' sekarang '+role, 'info'); 
-    } 
-    renderRoleUsersList(); 
+        setUserPremiumStatus(email, 'free', null);
+        showToast(email+' sekarang '+role, 'info');
+    }
+    
+    if(roleResult?.status === 'ok'){
+        setUserRole(email, role);
+        renderRoleUsersList(); 
+    } else {
+        showToast('Gagal assign role!', 'error');
+    }
+    
     document.getElementById('manage-email').value = ''; 
     document.getElementById('expired-duration').value = 'none'; 
     document.getElementById('custom-expired-container').classList.add('hidden'); 
@@ -1024,7 +1071,7 @@ window.renderTopUsersList = async function() {
     if(window.lucide) lucide.createIcons();
 };
 
-// CHAT REALTIME - PASTI KEKIRIM
+// CHAT REALTIME
 window.loadChatMessages = async function() {
     let res = await apiCall('getChat');
     if(res?.messages){
@@ -1050,7 +1097,7 @@ window.sendChatMessageToServer = async function(message) {
         read: false
     };
     await apiCall('sendChat', { message: newMsg });
-    await window.loadChatMessages();
+    await loadChatMessages();
 };
 
 const originalSendChat = window.sendChatMessage;
