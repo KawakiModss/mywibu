@@ -1,17 +1,18 @@
+// ========== TAILWIND CONFIG ==========
 tailwind.config = {
-            theme: {
-                extend: {
-                    colors: { 
-                        dark: '#0f0f0f', 
-                        surface: '#1a1a1a', 
-                        primary: '#f59e0b', 
-                        primaryDark: '#d97706',
-                        secondary: '#fbbf24'
-                    },
-                    fontFamily: { sans: ['Poppins', 'sans-serif'] },
-                }
-            }
+    theme: {
+        extend: {
+            colors: { 
+                dark: '#0f0f0f', 
+                surface: '#1a1a1a', 
+                primary: '#f59e0b', 
+                primaryDark: '#d97706',
+                secondary: '#fbbf24'
+            },
+            fontFamily: { sans: ['Poppins', 'sans-serif'] },
         }
+    }
+};
 
 // ========== MODAL COMMUNITY ==========
 function showCommunityModal() {
@@ -70,17 +71,17 @@ var customAnimeList = [];
 const DB = { get: function(k) { try { return JSON.parse(localStorage.getItem('ak_'+k)) } catch(e) { return null } }, set: function(k,v) { localStorage.setItem('ak_'+k, JSON.stringify(v)) }, del: function(k) { localStorage.removeItem('ak_'+k) } };
 
 function getUsers() { return DB.get('users') || {} }
-function saveUsers(u) { DB.set('users', u) }
+function saveUsers(u) { DB.set('users', u); }
 function getCurrentUser() { return DB.get('current_user') }
-function setCurrentUser(u) { DB.set('current_user', u) }
+function setCurrentUser(u) { DB.set('current_user', u); updateUserUI(); }
 function getReports() { return DB.get('reports') || [] }
-function saveReports(r) { DB.set('reports', r) }
+function saveReports(r) { DB.set('reports', r); }
 function getWatchHistory() { return DB.get('watch_history') || [] }
-function saveWatchHistory(h) { DB.set('watch_history', h) }
+function saveWatchHistory(h) { DB.set('watch_history', h); }
 function getNotifications() { return DB.get('notifications') || [] }
-function saveNotifications(n) { DB.set('notifications', n) }
+function saveNotifications(n) { DB.set('notifications', n); }
 function getWatchData() { return DB.get('watch_data') || {} }
-function setWatchData(w) { DB.set('watch_data', w) }
+function setWatchData(w) { DB.set('watch_data', w); }
 function getUserPremiumStatus(email) { const p = DB.get('premium_status') || {}; return p[email] || { plan: 'free', expiry: null }; }
 function setUserPremiumStatus(email, plan, expiryDate) { 
     const p = DB.get('premium_status') || {}; 
@@ -92,10 +93,8 @@ function setUserPremiumStatus(email, plan, expiryDate) {
 }
 function getUserRole(email) { const r = DB.get('user_roles') || {}; return r[email] || 'user'; }
 function setUserRole(email, role) { const r = DB.get('user_roles') || {}; r[email] = role; DB.set('user_roles', r); }
-
 function getCustomAnime() { return DB.get('custom_anime') || []; }
 function saveCustomAnime(list) { DB.set('custom_anime', list); }
-
 function generateRandomId() { return '#' + (Math.floor(100000 + Math.random() * 900000)).toString(); }
 
 function getCurrentPlan() { 
@@ -117,7 +116,7 @@ function addToHistory(anime) {
     saveWatchHistory(h); 
 }
 
-// ========== FUNGSI SHOW LOGIN/REGISTER YANG BENAR ==========
+// ========== FUNGSI SHOW LOGIN/REGISTER ==========
 function showLogin() { 
     var loginForm = document.getElementById('login-form');
     var registerForm = document.getElementById('register-form');
@@ -129,7 +128,6 @@ function showLogin() {
         registerForm.style.display = 'none';
         registerForm.classList.add('hidden');
     }
-    console.log('showLogin OK');
 }
 
 function showRegister() { 
@@ -143,7 +141,6 @@ function showRegister() {
         registerForm.style.pointerEvents = 'auto';
         registerForm.classList.remove('hidden');
     }
-    console.log('showRegister OK');
 }
 
 function doLogin() { 
@@ -179,7 +176,7 @@ function doRegister() {
 
 function guestLogin() { DB.del('current_user'); DB.set('guest_mode',true); document.getElementById('login-page').classList.add('hidden'); initApp(); showToast('Mode Tamu aktif - Maks 2 episode/anime, 480p','warning'); updateUserUIGuestMode(); showCommunityModal(); }
 function guestLogout() { DB.del('guest_mode'); DB.del('current_user'); document.getElementById('login-page').classList.remove('hidden'); location.reload(); }
-function googleLogin() { window.open('about:blank', '_blank'); }
+function googleLogin() { alert('Google Login: Login dengan email biasa dulu ya!'); }
 
 function ensureOwnerAccount() { 
     let u = getUsers(); 
@@ -799,282 +796,141 @@ document.getElementById('closeModalBtn')?.addEventListener('click', closeCommuni
     console.log('✅ TOMBOL LOGIN/DAFTAR SUDAH BISA DI KLIK');
 })();
 
-// ========== KONEKSI KE BACKEND REALTIME ==========
+// ========== REALTIME API ==========
 const API_URL = window.location.origin + '/api.php';
 
 async function apiCall(action, body = null, query = '') {
     let url = `${API_URL}?action=${action}`;
     if (query) url += '&' + query;
-    let options = { method: 'GET' };
-    if (body) {
-        options = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        };
-    }
     try {
-        let res = await fetch(url, options);
+        let res = await fetch(url, {
+            method: body ? 'POST' : 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : null
+        });
         return await res.json();
     } catch(e) { console.error('API Error:', e); return null; }
 }
 
-// ========== OVERRIDE FUNGSI GET USERS & SAVE USERS ==========
-const originalGetUsers = getUsers;
-window.getUsers = async function() {
-    let result = await apiCall('getAllUsers');
-    if (result?.users) return result.users;
-    return originalGetUsers();
-};
-
-const originalSaveUsers = saveUsers;
-window.saveUsers = function(users) {
-    originalSaveUsers(users);
-    apiCall('syncUsers', { users: users });
-};
-
-// ========== SYNC WATCH DATA ==========
-const originalSetWatchData = setWatchData;
-window.setWatchData = function(w) {
-    originalSetWatchData(w);
-    let cu = getCurrentUser();
-    if (cu?.email) {
-        apiCall('updateWatchData', { email: cu.email, watchData: w });
-    }
-};
-
-// ========== SYNC WATCH HISTORY ==========
-const originalSaveWatchHistory = saveWatchHistory;
-window.saveWatchHistory = function(h) {
-    originalSaveWatchHistory(h);
-    let cu = getCurrentUser();
-    if (cu?.email) {
-        apiCall('syncHistory', { email: cu.email, history: h });
-    }
-};
-
-// ========== SYNC USER STATS (XP, LEVEL, KEYS, GEM) ==========
-async function syncUserStats() {
-    let cu = getCurrentUser();
-    if (cu?.email) {
-        await apiCall('updateUserStats', {
-            email: cu.email,
-            stats: {
-                level: cu.level,
-                xp: cu.xp,
-                keys: cu.keys,
-                wibuGem: cu.wibuGem
-            }
-        });
-    }
-}
-
-// ========== POLLING REALTIME ==========
-setInterval(async () => {
-    if (currentPage === 'home' || currentPage === 'top') {
-        await renderTopGlobalUsersCarousel();
-        if (typeof renderTopUsersList === 'function') await renderTopUsersList();
-        if (typeof renderTopAnimeList === 'function') await renderTopAnimeList();
-    }
-    if (typeof loadChatMessages === 'function') await loadChatMessages();
-}, 5000);
-
-// ========== IKLAN LIMIT SYNC ==========
-const originalCheckAndResetIklanLimit = checkAndResetIklanLimit;
-window.checkAndResetIklanLimit = async function() {
-    let cu = getCurrentUser();
-    if (!cu?.email) return originalCheckAndResetIklanLimit();
-    let result = await apiCall('getIklanLimit', null, `email=${cu.email}`);
-    return (result?.count || 0) < 3;
-};
-
-const originalIncrementIklanCount = incrementIklanCount;
-window.incrementIklanCount = async function() {
-    let cu = getCurrentUser();
-    if (cu?.email) {
-        await apiCall('incrementIklan', { email: cu.email });
-    }
-    originalIncrementIklanCount();
-};
-
-// ========== CHAT REALTIME ==========
-window.loadChatMessages = async function() {
-    let result = await apiCall('getChat');
-    if (result?.messages) {
-        window.chatMessages = result.messages;
-        localStorage.setItem('ak_global_chat', JSON.stringify(window.chatMessages));
-        if (typeof updateChatBadge === 'function') updateChatBadge();
-        if (typeof renderChatPreview === 'function') renderChatPreview();
-        if (document.getElementById('globalChatModal')) {
-            if (typeof renderChatMessagesFull === 'function') renderChatMessagesFull();
-        }
-    }
-};
-
-window.sendChatMessageToServer = async function(message) {
-    let cu = getCurrentUser();
-    let isGuest = localStorage.getItem('guest_mode') === 'true';
-    
-    let senderEmail = cu?.email || 'guest_' + Date.now();
-    let senderName = cu?.username || (isGuest ? 'Guest Mode' : 'Anonymous');
-    let senderLevel = cu?.level || 1;
-    let senderUserId = cu?.userId || '#GUEST';
-    
-    let newMsg = {
-        id: Date.now(),
-        senderEmail: senderEmail,
-        senderName: senderName,
-        senderLevel: senderLevel,
-        senderUserId: senderUserId,
-        message: message,
-        timestamp: Date.now(),
-        read: false
-    };
-    
-    await apiCall('sendChat', { message: newMsg });
-    await loadChatMessages();
-};
-
-// OVERRIDE SEND CHAT MESSAGE
-if (typeof window.sendChatMessage === 'function') {
-    const originalSendChatMessage = window.sendChatMessage;
-    window.sendChatMessage = async function() {
-        let input = document.getElementById('chatInput');
-        let message = input?.value.trim();
-        if (message) {
-            await window.sendChatMessageToServer(message);
-            if (input) input.value = '';
-        }
-    };
-}
-
-// ========== BROADCAST NOTIFICATION ==========
-const originalSendBroadcastWithMedia = sendBroadcastWithMedia;
-window.sendBroadcastWithMedia = async function() {
-    if (!currentUserIsOwner()) { showToast('Hanya owner!', 'warning'); return; }
-    let title = document.getElementById('broadcast-title')?.value.trim();
-    let msg = document.getElementById('broadcast-message')?.value.trim();
-    if (!title || !msg) { showToast('Judul dan pesan wajib!', 'warning'); return; }
-    
-    await apiCall('broadcast', {
-        broadcast: {
-            type: 'broadcast',
-            title: title,
-            message: msg,
-            sender: getCurrentUser()?.username || 'Owner'
-        }
-    });
-    showToast('Broadcast terkirim ke semua user!', 'info');
-    document.getElementById('broadcast-title').value = '';
-    document.getElementById('broadcast-message').value = '';
-};
-
-// ========== NOTIFICATION GET ==========
-const originalGetNotifications = getNotifications;
-window.getNotifications = async function() {
-    let cu = getCurrentUser();
-    if (!cu?.email) return originalGetNotifications();
-    let result = await apiCall('getNotifications', null, `email=${cu.email}`);
-    return result?.notifications || [];
-};
-
-// ========== PANGGIL LOAD CHAT PERTAMA KALI ==========
-setTimeout(() => {
-    if (typeof loadChatMessages === 'function') loadChatMessages();
-}, 1000);
-
-// ========== REALTIME API CONNECTOR - TARUH DI PALING BAWAH SCRIPT.JS ==========
-const API_URL = window.location.origin + '/api.php';
-
-async function apiCall(action, body = null, query = '') {
-    let url = `${API_URL}?action=${action}`;
-    if (query) url += '&' + query;
-    let options = { method: 'GET' };
-    if (body) {
-        options = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        };
-    }
-    try {
-        let res = await fetch(url, options);
-        return await res.json();
-    } catch(e) { return null; }
-}
-
-// OVERRIDE TOP GLOBAL
-const _originalRenderTop = window.renderTopGlobalUsersCarousel;
+// UPDATE TOP GLOBAL USERS CAROUSEL - REALTIME
 window.renderTopGlobalUsersCarousel = async function() {
-    let result = await apiCall('getAllUsers');
-    let users = result?.users || (await _originalRenderTop?.()) || {};
-    let sorted = [];
-    for (let e in users) {
-        if (users[e]) sorted.push({
-            username: users[e].username || e.split('@')[0],
-            level: users[e].level || 1,
-            xp: users[e].xp || 0,
-            avatar: users[e].avatar,
-            userId: users[e].userId
-        });
-    }
-    sorted.sort((a,b) => b.xp - a.xp);
-    sorted = sorted.slice(0,10);
+    let res = await apiCall('getAllUsers');
+    let users = res?.users || getUsers();
+    let sorted = Object.values(users).map(u => ({
+        username: u.username || 'Unknown',
+        level: u.level || 1,
+        xp: u.xp || 0,
+        avatar: u.avatar,
+        userId: u.userId
+    })).sort((a,b) => b.xp - a.xp).slice(0,10);
+    
     let container = document.getElementById('top-global-users-carousel');
     if(!container) return;
-    if(sorted.length === 0) { container.innerHTML = '<div class="text-center text-gray-500 text-xs py-4">Belum ada user</div>'; return; }
+    if(!sorted.length){
+        container.innerHTML = '<div class="text-center text-gray-500 text-xs py-4">Belum ada user</div>';
+        return;
+    }
     let html = '';
     for(let i=0;i<sorted.length;i++){
         let u = sorted[i];
-        let rankClass = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
+        let rank = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
         let badge = getBadge(u.level);
         html += `<div class="flex items-center gap-3 glass rounded-xl p-2 cursor-pointer" onclick="switchPage('top')">
-            <div class="w-8 h-8 rounded-full ${rankClass} flex items-center justify-center text-white font-bold text-xs">${i+1}</div>
-            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center overflow-hidden">
+            <div class="w-8 h-8 rounded-full ${rank} flex items-center justify-center text-white font-bold text-xs">${i+1}</div>
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center">
                 ${u.avatar ? '<img src="'+u.avatar+'" class="w-full h-full object-cover">' : '<i data-lucide="user" class="w-4 h-4 text-white"></i>'}
             </div>
-            <div class="flex-1 text-left"><div class="text-xs font-semibold">${u.username}</div><div class="text-[8px] text-amber-400">${badge.label}</div></div>
-            <div class="text-right"><div class="text-xs font-bold text-amber-400">Lvl ${u.level}</div><div class="text-[8px] text-gray-500">${u.xp} XP</div></div>
+            <div class="flex-1 text-left">
+                <div class="text-xs font-semibold">${escapeHtml(u.username)}</div>
+                <div class="text-[8px] text-amber-400">${badge.label}</div>
+                <div class="text-[8px] text-gray-500">${u.userId||'#XXXXXX'}</div>
+            </div>
+            <div class="text-right">
+                <div class="text-xs font-bold text-amber-400">Lvl ${u.level}</div>
+                <div class="text-[8px] text-gray-500">${u.xp} XP</div>
+            </div>
         </div>`;
     }
     container.innerHTML = html;
-    lucide.createIcons();
+    if(window.lucide) lucide.createIcons();
 };
 
-// OVERRIDE TOP ANIME
-const _originalTopAnime = window.renderTopAnimeList;
+// UPDATE TOP ANIME LIST - REALTIME
 window.renderTopAnimeList = async function() {
-    let result = await apiCall('getAllWatchData');
-    let data = result?.data || {};
-    let top = [];
-    for(let url in data){
-        top.push({ url, title: data[url].title, cover: data[url].cover, count: data[url].count });
-    }
-    top.sort((a,b)=>b.count-a.count);
-    top = top.slice(0,20);
+    let res = await apiCall('getAllWatchData');
+    let data = res?.data || {};
+    let top = Object.entries(data).map(([url,info]) => ({
+        url, title: info.title, cover: info.cover, count: info.count
+    })).sort((a,b) => b.count - a.count).slice(0,20);
+    
     let container = document.getElementById('top-global-list');
     if(!container) return;
-    if(top.length===0){ container.innerHTML='<div class="text-center text-gray-500">Belum ada data</div>'; return; }
+    if(!top.length){
+        container.innerHTML = '<div class="text-center text-gray-500">Belum ada data</div>';
+        return;
+    }
     let html = '';
     for(let i=0;i<top.length;i++){
         let a = top[i];
-        let rankClass = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
+        let rank = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
         html += `<div class="flex items-center gap-3 glass rounded-2xl p-3 cursor-pointer" onclick="loadDetail('${a.url.replace(/'/g,"\\'")}')">
-            <div class="w-9 h-9 rounded-xl ${rankClass} flex items-center justify-center text-white font-black">${i+1}</div>
+            <div class="w-9 h-9 rounded-xl ${rank} flex items-center justify-center text-white font-black">${i+1}</div>
             <img class="w-12 h-16 object-cover rounded-xl" src="${a.cover}" onerror="this.src='https://via.placeholder.com/300x400?text=Error'">
-            <div class="flex-1"><div class="font-semibold text-sm">${a.title}</div><div class="text-[11px] text-gray-400">${a.count} views</div></div>
+            <div class="flex-1"><div class="font-semibold text-sm">${escapeHtml(a.title)}</div><div class="text-[11px] text-gray-400">${a.count} views</div></div>
         </div>`;
     }
     container.innerHTML = html;
 };
 
+// UPDATE TOP USERS LIST - REALTIME
+window.renderTopUsersList = async function() {
+    let res = await apiCall('getAllUsers');
+    let users = res?.users || getUsers();
+    let sorted = Object.values(users).map(u => ({
+        username: u.username || 'Unknown',
+        level: u.level || 1,
+        xp: u.xp || 0,
+        avatar: u.avatar,
+        userId: u.userId
+    })).sort((a,b) => b.xp - a.xp).slice(0,20);
+    
+    let container = document.getElementById('top-global-users-list');
+    if(!container) return;
+    if(!sorted.length){
+        container.innerHTML = '<div class="text-center text-gray-500 text-sm py-4">Belum ada user</div>';
+        return;
+    }
+    let html = '';
+    for(let i=0;i<sorted.length;i++){
+        let u = sorted[i];
+        let rank = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other';
+        let badge = getBadge(u.level);
+        html += `<div class="flex items-center gap-3 glass rounded-2xl p-3 cursor-pointer" onclick="switchPage('account')">
+            <div class="w-9 h-9 rounded-xl ${rank} flex items-center justify-center text-white font-black">${i+1}</div>
+            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center">
+                ${u.avatar ? '<img src="'+u.avatar+'" class="w-full h-full object-cover">' : '<i data-lucide="user" class="w-5 h-5 text-white"></i>'}
+            </div>
+            <div class="flex-1">
+                <div class="font-semibold text-sm">${escapeHtml(u.username)}</div>
+                <div class="badge-pill bg-amber-500/20 text-amber-400">${badge.label}</div>
+                <div class="text-[9px] text-gray-500">${u.userId||'#XXXXXX'}</div>
+            </div>
+            <div class="text-right">
+                <div class="text-sm font-bold text-amber-400">Lvl ${u.level}</div>
+                <div class="text-[10px] text-gray-500">${u.xp} XP</div>
+            </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+    if(window.lucide) lucide.createIcons();
+};
+
 // CHAT REALTIME
-let chatMessages = [];
 window.loadChatMessages = async function() {
-    let result = await apiCall('getChat');
-    if(result?.messages){
-        chatMessages = result.messages;
-        localStorage.setItem('ak_global_chat', JSON.stringify(chatMessages));
+    let res = await apiCall('getChat');
+    if(res?.messages){
+        window.chatMessages = res.messages;
+        localStorage.setItem('ak_global_chat', JSON.stringify(res.messages));
         if(typeof updateChatBadge === 'function') updateChatBadge();
         if(typeof renderChatPreview === 'function') renderChatPreview();
         if(document.getElementById('globalChatModal') && typeof renderChatMessagesFull === 'function') renderChatMessagesFull();
@@ -1095,29 +951,30 @@ window.sendChatMessageToServer = async function(message) {
         read: false
     };
     await apiCall('sendChat', { message: newMsg });
-    await window.loadChatMessages();
+    await loadChatMessages();
 };
 
-const _originalSendChat = window.sendChatMessage;
+const originalSendChat = window.sendChatMessage;
 window.sendChatMessage = async function() {
     let input = document.getElementById('chatInput');
     let msg = input?.value.trim();
     if(msg){
         await window.sendChatMessageToServer(msg);
         if(input) input.value = '';
-    } else if(_originalSendChat){
-        _originalSendChat();
+    } else if(originalSendChat){
+        originalSendChat();
     }
 };
 
-// POLLING
+// POLLING REALTIME
 setInterval(async () => {
-    if(currentPage === 'home' || currentPage === 'top'){
+    if(window.currentPage === 'home' || window.currentPage === 'top'){
         await window.renderTopGlobalUsersCarousel();
+        await window.renderTopUsersList();
         await window.renderTopAnimeList();
     }
     await window.loadChatMessages();
 }, 5000);
 
 setTimeout(() => { window.loadChatMessages(); }, 1000);
-console.log('REALTIME ACTIVE');
+console.log(' REALTIME ACTIVE - TOMBOL TETAP BISA DI KLIK');
